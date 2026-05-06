@@ -21,7 +21,7 @@ const SHADER_PADDING = 20;
 // const MENU_Y_OFFSET = GLASS_EXPAND + 5;  
 
 // Adaptive text color flags
-const ENABLE_ADAPTIVE_TEXT_COLOR = true;
+const ENABLE_ADAPTIVE_TEXT_COLOR = false;
 const SAMPLE_PER_ELEMENT = false;
 const SAMPLE_INTERVAL_MS = 400; // How often to resample colors while the menu is open (in milliseconds)
 
@@ -79,14 +79,10 @@ export class QuickSettingsManager {
         this._appDisplayClone = null;
         this._searchClone = null;
 
-        // Listen for the menu opening/closing to trigger our custom physics animation
-        this._signals.push(this.menu.connect('open-state-changed', (menu, isOpen) => {
-            if (isOpen) {
-                this._startAnimation(1); // Target scale: 1.0 (fully open)
-            } else {
-                this._startAnimation(0); // Target scale: 0.0 (closed)
-            }
-        }));
+        this.buttonAlpha = 0.8;
+        this._buttonTimerId = 0;
+        this._styledButtons = new Map();
+        this._buttonSignalIds = new Map();
     }
 
     setup() {
@@ -105,6 +101,14 @@ export class QuickSettingsManager {
         let g = parseInt(hex.slice(3, 5), 16) / 255.0;
         let b = parseInt(hex.slice(5, 7), 16) / 255.0;
         return [r, g, b];
+    }
+
+    _applyMenuOffsets() {
+        if (!this.targetActor || !this._hasAutoRefreshed)
+            return;
+
+        this.targetActor.translation_y = this._menuYoffset;
+        this.targetActor.translation_x = this._menuXoffset;
     }
 
     // 追加: 設定の動的反映
@@ -155,14 +159,14 @@ export class QuickSettingsManager {
         connectSetting('quick-settings-y-offset', () => {
             if (this.targetActor) {
                 this._menuYoffset = this._settings.get_int('quick-settings-y-offset');
-                this.targetActor.translation_y = this._menuYoffset;
+                this._applyMenuOffsets();
             }
         });
 
         connectSetting('quick-settings-x-offset', () => {
             if (this.targetActor) {
                 this._menuXoffset = this._settings.get_int('quick-settings-x-offset');
-                this.targetActor.translation_x = this._menuXoffset;
+                this._applyMenuOffsets();
             }
         });
 
@@ -176,6 +180,14 @@ export class QuickSettingsManager {
         });
     }
 
+    _applyClassStyles() {
+        if (!this.targetActor) return;
+        if (!this._hasStyleClass(this.targetActor, 'liquid-glass-transparent')) this.targetActor.add_style_class_name('liquid-glass-transparent');
+        if (!this._hasStyleClass(this.animActor, 'liquid-glass-transparent')) this.animActor.add_style_class_name('liquid-glass-transparent');
+
+        if (!this._hasStyleClass(this.animActor, 'liquid-glass-qs-root')) this.animActor.add_style_class_name('liquid-glass-qs-root');
+    }
+
     _applyEffect() {
         if (this._isEffectActive) return;
         this._isEffectActive = true;
@@ -183,21 +195,18 @@ export class QuickSettingsManager {
         if (!this.targetActor) return;
         
         // Remove default GNOME styling and make the background transparent
+        /*
         this.targetActor.add_style_class_name('liquid-glass-transparent');
         this.animActor.add_style_class_name('liquid-glass-transparent');
+        */
 
-        const messageList = Main.panel.statusArea.dateMenu._messageList;
-        if (messageList && messageList.actor) {
-            messageList.actor.add_style_class_name('liquid-glass-message-list');
-        }
+        // this.animActor.add_style_class_name('liquid-glass-qs-root');
+
         // this.animActor.add_style_class_name('liquid-glass-menu-root');
 
         // Shift the menu down to prevent it from clipping into the top bar
         this._menuYoffset = this._settings.get_int('quick-settings-y-offset');
-        this.targetActor.translation_y = this._menuYoffset;
         this._menuXoffset = this._settings.get_int('quick-settings-x-offset');
-        this.targetActor.translation_x = this._menuXoffset;
-        // this.targetActor.margin_top = MENU_Y_OFFSET;
 
         this._glassExpand = this._settings.get_int('quick-settings-glass-expand');
 
@@ -286,29 +295,42 @@ export class QuickSettingsManager {
         let buildClones = () => {
             if (!this.bgActor) return;
             
-            // Clean up old clones before creating new ones
-            if (this.bgClone) {
-                this.bgClone.destroy();
-                this.bgClone = null;
-            }
-            if (this.windowClonesContainer) {
-                this.windowClonesContainer.destroy();
-                this.windowClonesContainer = null;
-            }
-            if (this.overviewCloneContainer) {
-                this.overviewCloneContainer.destroy();
-                this.overviewCloneContainer = null;
-            }
+            // 1. ISOLATED CLEANUP
+            // Wrap the destroy call in a helper function so one failure doesn't halt the rest
+            const safeDestroy = (actorRef) => {
+                if (actorRef) {
+                    try {
+                        actorRef.destroy();
+                    } catch (e) {
+                        // C object was already disposed, ignore safely.
+                    }
+                }
+            };
 
-            // Clone the desktop background
+            // Clean up old clones independently
+            safeDestroy(this.bgClone);
+            this.bgClone = null;
+
+            safeDestroy(this.windowClonesContainer);
+            this.windowClonesContainer = null;
+
+            safeDestroy(this.overviewCloneContainer);
+            this.overviewCloneContainer = null;
+
+            // 2. CREATION WITH LIFECYCLE TRACKING
+            // Clone the desktop background and track its destruction
             this.bgClone = new Clutter.Clone({ source: Main.layoutManager._backgroundGroup });
+            this.bgClone.connect('destroy', () => { this.bgClone = null; });
             this.clipBox.add_child(this.bgClone); 
 
+            // Create and track overview clone container
             this.overviewCloneContainer = new Clutter.Actor();
+            this.overviewCloneContainer.connect('destroy', () => { this.overviewCloneContainer = null; });
             this.clipBox.add_child(this.overviewCloneContainer);
 
-            // Create a container for the window clones
+            // Create and track window clones container
             this.windowClonesContainer = new Clutter.Actor();
+            this.windowClonesContainer.connect('destroy', () => { this.windowClonesContainer = null; });
             this.clipBox.add_child(this.windowClonesContainer);
 
             this._windowClones.clear();
@@ -361,21 +383,41 @@ export class QuickSettingsManager {
             }
         };
 
-        // Clear the cached size whenever the menu opens so it can recalculate 
-        // based on any new notifications or calendar events added
+        if (this._hasAutoRefreshed === undefined) {
+            this._hasAutoRefreshed = false;
+        }
+        
+        // Handle the first open as a plain GNOME quick settings open; apply custom behavior only afterwards.
         this._signals.push(this.menu.connect('open-state-changed', (menu, isOpen) => {
             if (isOpen) {
+                if (!this._hasAutoRefreshed) {
+                    this._hasAutoRefreshed = true;
+                    return;
+                }
+
                 this._stableBaseW = undefined;
                 this._stableBaseH = undefined;
                 startFrameSync();
                 this._startAdaptiveColorSampling();
-            } else {
-                this._stopAdaptiveColorSampling();
+                this._startButtonAlphaSampling();
+                this._startAnimation(1);
+                return;
             }
+
+            this._applyClassStyles();
+            this._applyMenuOffsets();
+
+            if (!this._hasAutoRefreshed)
+                return;
+
+            stopFrameSync();
+            this._stopAdaptiveColorSampling();
+            this._stopButtonAlphaSampling();
+            this._startAnimation(0);
         }));
 
         this._updateResolution();
-        if (this.targetActor.mapped) {
+        if (this.targetActor.mapped && this._hasAutoRefreshed) {
             startFrameSync();
         }
     }
@@ -881,6 +923,194 @@ export class QuickSettingsManager {
         });
     }
 
+    // Recursively collect all St.Button elements and quick-toggle containers
+    _findAllButtons(actor, foundButtons = []) {
+        if (!actor) return foundButtons;
+
+        // Check if the current actor has the 'quick-slider' class
+        // .quick-slider is controled with stylesheet.css
+        let isQuickSlider = actor.has_style_class_name && actor.has_style_class_name('quick-slider');
+
+        // Collect visible St.Button elements and quick-toggle containers (for split buttons)
+        if (actor.visible && !isQuickSlider) {
+            let isButton = actor instanceof St.Button;
+            let isToggleContainer = actor.has_style_class_name && actor.has_style_class_name('quick-toggle');
+            
+            if (isButton || isToggleContainer) {
+                foundButtons.push(actor);
+            }
+        }
+
+        // Recursively traverse children
+        let children = typeof actor.get_children === 'function' ? actor.get_children() : [];
+        for (let i = 0; i < children.length; i++) {
+            this._findAllButtons(children[i], foundButtons);
+        }
+
+        return foundButtons;
+    }
+
+    // Helper function to safely update a single button without traversing the whole menu
+    _updateSingleButtonAlpha(button, targetAlpha) {
+        if (!button || button._isUpdatingAlpha) return;
+        button._isUpdatingAlpha = true;
+
+        // Temporarily clear inline style to fetch the base theme background
+        let origStyle = this._styledButtons.get(button) || '';
+        button.set_style(origStyle || null);
+
+        let themeNode = button.get_theme_node();
+        if (themeNode) {
+            let bgColor = themeNode.get_background_color();
+            
+            if (bgColor) {
+                let isToggleContainer = button.has_style_class_name && button.has_style_class_name('quick-toggle');
+
+                // FIX 1: If this is a parent toggle container, hide its background if any child is active/colored.
+                // This prevents the dark pod background from muddying the semi-transparent orange child button.
+                if (isToggleContainer) {
+                    let hasColoredChild = false;
+                    let children = typeof button.get_children === 'function' ? button.get_children() : [];
+                    for (let i = 0; i < children.length; i++) {
+                        let childTheme = children[i].get_theme_node();
+                        if (childTheme) {
+                            let childBg = childTheme.get_background_color();
+                            if (childBg && childBg.alpha > 0) {
+                                hasColoredChild = true;
+                                break;
+                            }
+                        }
+                    }
+
+                    if (hasColoredChild) {
+                        let newStyle = origStyle ? `${origStyle} background-color: transparent !important;` : `background-color: transparent !important;`;
+                        button.set_style(newStyle);
+                        button._isUpdatingAlpha = false;
+                        return; // Exit early since we made the parent transparent
+                    }
+                }
+
+                // FIX 2: If the button is completely transparent by default (like power/lock buttons), keep it transparent.
+                if (bgColor.alpha === 0) {
+                    // Do nothing, leaves it as origStyle (which is already set above)
+                } else {
+                    // Apply target alpha for normally visible buttons
+                    let rgbaStr = `rgba(${bgColor.red}, ${bgColor.green}, ${bgColor.blue}, ${targetAlpha})`;
+                    let newStyle = origStyle ? `${origStyle} background-color: ${rgbaStr};` : `background-color: ${rgbaStr};`;
+                    button.set_style(newStyle);
+
+                    // Ensure the parent toggle container is also updated dynamically.
+                    // If a child button changes state, we must force the parent to re-evaluate its transparency.
+                    let parent = typeof button.get_parent === 'function' ? button.get_parent() : null;
+                    if (parent && parent.has_style_class_name && parent.has_style_class_name('quick-toggle')) {
+                        // Safe to call recursively since _isUpdatingAlpha protects from infinite loops
+                        this._updateSingleButtonAlpha(parent, targetAlpha);
+                    }
+                }
+            }
+        }
+
+        button._isUpdatingAlpha = false;
+    }
+
+    // Main initialization and polling loop
+    _updateButtonAlpha() {
+        if (!this.menu?.isOpen) return;
+
+        const buttons = this._findAllButtons(this.menu?.actor);
+        if (buttons.length === 0) return;
+
+        let targetAlpha = this.buttonAlpha !== undefined ? this.buttonAlpha : 0.5;
+
+        for (let button of buttons) {
+            if (!this._styledButtons.has(button)) {
+                let origStyle = typeof button.get_style === 'function' ? button.get_style() : null;
+                this._styledButtons.set(button, origStyle);
+                
+                // PERFORMANCE FIX: Only update the specific button that triggered the event
+                const updateHandler = () => {
+                    if (this.menu?.isOpen) this._updateSingleButtonAlpha(button, targetAlpha);
+                };
+
+                let signalIds = [];
+
+                signalIds.push(button.connect('notify::hover', updateHandler));
+                signalIds.push(button.connect('notify::active', updateHandler));
+                signalIds.push(button.connect('notify::checked', updateHandler));
+                signalIds.push(button.connect('notify::reactive', updateHandler));
+                signalIds.push(button.connect('notify::mapped', updateHandler));
+                signalIds.push(button.connect('key-focus-in', updateHandler));
+                signalIds.push(button.connect('key-focus-out', updateHandler));
+                
+                // CRITICAL FIX: Removed 'style-changed'. 
+                // calling set_style() triggers 'style-changed', which caused the infinite crash loop!
+
+                this._buttonSignalIds.set(button, signalIds);
+            }
+
+            // Apply style safely
+            this._updateSingleButtonAlpha(button, targetAlpha);
+        }
+    }
+
+    // サンプリングタイマーの開始
+    _startButtonAlphaSampling() {
+        this._updateButtonAlpha(); // 初回実行
+
+        if (this._buttonTimerId !== 0) return;
+
+        // イベント駆動と併用するため、間隔は長めの400msや1000msで十分です
+        const intervalMs = 400; 
+        
+        this._buttonTimerId = GLib.timeout_add(
+            GLib.PRIORITY_DEFAULT,
+            intervalMs,
+            () => {
+                if (!this.menu?.isOpen) {
+                    this._buttonTimerId = 0;
+                    return GLib.SOURCE_REMOVE;
+                }
+                this._updateButtonAlpha();
+                return GLib.SOURCE_CONTINUE;
+            }
+        );
+    }
+
+    // サンプリングタイマーの停止
+    _stopButtonAlphaSampling() {
+        if (this._buttonTimerId !== 0) {
+            GLib.source_remove(this._buttonTimerId);
+            this._buttonTimerId = 0;
+        }
+    }
+
+    // 拡張機能無効時などに元に戻す処理
+    _clearButtonStyles() {
+        this._stopButtonAlphaSampling();
+        if (this._buttonSignalIds) {
+            for (const [button, signalIds] of this._buttonSignalIds.entries()) {
+                // ボタンがまだメモリ上に存在しているか確認
+                if (button) {
+                    for (const id of signalIds) {
+                        try {
+                            button.disconnect(id);
+                        } catch (e) {
+                            // ボタンが既に破棄されていた場合などのエラーを無視する
+                        }
+                    }
+                }
+            }
+            this._buttonSignalIds.clear();
+        }
+        for (const [button, originalStyle] of this._styledButtons.entries()) {
+            if (button && typeof button.set_style === 'function') {
+                button.set_style(originalStyle || null);
+                delete button._isUpdatingAlpha;
+            }
+        }
+        this._styledButtons.clear();
+    }
+
     // Handles the custom bounce/spring physics when the menu opens or closes
     _startAnimation(targetValue) {
         // Clear any built-in GNOME transitions that might interfere with our logic
@@ -1012,6 +1242,7 @@ export class QuickSettingsManager {
 
         this._stopAdaptiveColorSampling();
         this._clearAdaptiveStyles();
+        this._clearButtonStyles();
         
         // Disconnect all event listeners
         for (let sigId of this._signals) {
@@ -1032,7 +1263,7 @@ export class QuickSettingsManager {
         this.targetActor.remove_style_class_name('liquid-glass-transparent');
         if (this.animActor) {
             this.animActor.remove_style_class_name('liquid-glass-transparent');
-            // this.animActor.remove_style_class_name('liquid-glass-menu-root');
+            this.animActor.remove_style_class_name('liquid-glass-qs-root');
             
             // Revert UI shifts and forced states
             this.animActor.translation_x = 0;

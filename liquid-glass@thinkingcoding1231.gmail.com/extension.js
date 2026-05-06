@@ -21,8 +21,12 @@ export default class LiquidGlassExtension extends Extension {
         this._notificationManager = new NotificationManager(this.dir.get_path(), this._settings);
         this._notificationManager.setup();
 
-        this._quickSettingsManager = new QuickSettingsManager(this.dir.get_path(), this._settings);
-        this._quickSettingsManager.setup();
+        this._quickSettingsTimeoutId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 1500, () => {
+            this._quickSettingsManager = new QuickSettingsManager(this.dir.get_path(), this._settings);
+            this._quickSettingsManager.setup();
+            this._quickSettingsTimeoutId = 0;
+            return GLib.SOURCE_REMOVE;
+        });
 
         // Variable to store the timeout ID so we can cancel it if the extension is disabled quickly
         this._timeoutId = 0;
@@ -112,6 +116,11 @@ export default class LiquidGlassExtension extends Extension {
 
     disable() {
         console.log(`[Liquid Glass] Disabling...`);
+
+        if (this._quickSettingsTimeoutId && this._quickSettingsTimeoutId !== 0) {
+            GLib.Source.remove(this._quickSettingsTimeoutId);
+            this._quickSettingsTimeoutId = 0;
+        }
 
         // Clear any pending timeouts to prevent them from executing after the extension is disabled
         if (this._timeoutId !== 0) {

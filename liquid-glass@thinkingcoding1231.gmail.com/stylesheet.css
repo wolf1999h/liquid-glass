@@ -45,6 +45,8 @@
     box-shadow: none !important;
 }
 
+/* カレンダーの通常の日付ボタンの背景を透明にする */
+/* 「今日(.calendar-today)」「ホバー時(:hover)」「クリック時(:active)」「フォーカス/選択時(:focus, :checked)」を除外 */
 .liquid-glass-transparent .calendar-day:not(.calendar-today):not(:hover):not(:active):not(:focus):not(:checked) {
     background-color: transparent !important;
     background-image: none !important;
@@ -131,4 +133,13 @@
 .liquid-glass-menu-root .world-clocks-button:hover,
 .liquid-glass-menu-root .world-clocks-button:focus {
     background-color: rgba(65, 65, 65, 0.72) !important;
+}
+
+/* スライダー全体を半透明のカードで囲む */
+.liquid-glass-qs-root .quick-slider {
+    background-color: rgba(255, 255, 255, 0.15) !important; /* カレンダーより少し薄めが合うかも */
+    border-radius: 20px !important;
+    padding: 24px 24px !important;
+    margin-bottom: 8px !important;
+    box-shadow: none !important;
 }
