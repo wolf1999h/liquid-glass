@@ -86,7 +86,7 @@ export default class LiquidGlassPreferences extends ExtensionPreferences {
         });
         window.add(qsPage);
 
-        const qsGroup = new Adw.PreferencesGroup({ title: 'Quick Settings Settings' });
+        const qsGroup = new Adw.PreferencesGroup({ title: 'Quick Settings Settings (Experimental)' });
         qsPage.add(qsGroup);
 
         this._addSwitchRow(qsGroup, settings, 'enable-quick-settings-glass', 'Enable Glass Effect', 'Apply to quick settings panel');
