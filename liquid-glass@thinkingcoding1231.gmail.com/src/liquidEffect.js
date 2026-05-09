@@ -9,12 +9,16 @@ export const LiquidEffect = GObject.registerClass({
 }, class LiquidEffect extends Clutter.ShaderEffect {
     
     _init(params = {}) {
-        let extensionPath = params.extensionPath;
+        const extensionPath = params.extensionPath;
+        const settings = params.settings;
+        
         delete params.extensionPath;
+        delete params.settings;
         
         super._init(params);
         
         this._extensionPath = extensionPath;
+        this._settings = settings;
         
         console.log(`[Liquid Glass] Initing LiquidEffect. path: ${this._extensionPath}`);
 
@@ -33,6 +37,7 @@ export const LiquidEffect = GObject.registerClass({
 
         // Parameters controlling the physical appearance of the glass.
         // These are synchronized with standard PBR/Three.js material defaults.
+        /*
         this._setFloat('max_z', 25.0);
         this._setFloat('displacement_scale', 78.5);
         this._setFloat('edge_smoothing', 2.0);
@@ -57,8 +62,59 @@ export const LiquidEffect = GObject.registerClass({
         this._setFloat('bg_glow_intensity', 0.0);
         this._setFloat('shadow_radius', 150.0);
         this._setFloat('shadow_intensity', 0.50);
+        */
+        // GSettingsとの同期開始
         this._setFloat('padding', 20.0);
         this._setFloat('isDock', 0.0);
+
+        this._settingsIds = [];
+        if (this._settings) {
+            this._bindSettings();
+        } else {
+            // settingsがない場合のデフォルトフォールバック
+            this._setFloat('max_z', 25.0);
+            this._setFloat('displacement_scale', 78.5);
+        }
+    }
+
+    _bindSettings() {
+        // 設定キー(GSettings) と シェーダー変数名(Uniform) の対応リスト
+        const mappings = [
+            { key: 'glass-max-z', uniform: 'max_z' },
+            { key: 'glass-displacement-scale', uniform: 'displacement_scale' },
+            { key: 'glass-edge-smoothing', uniform: 'edge_smoothing' },
+            { key: 'glass-profile-shape-n', uniform: 'profile_shape_n' },
+            { key: 'glass-ior', uniform: 'ior' },
+            { key: 'glass-chroma-strength', uniform: 'chroma_strength' },
+            { key: 'glass-specular-intensity', uniform: 'specular_intensity' },
+            { key: 'glass-shininess', uniform: 'shininess' },
+            { key: 'glass-rim-width', uniform: 'rim_width' },
+            { key: 'glass-rim-intensity', uniform: 'rim_intensity' },
+            { key: 'glass-rim-directional-power', uniform: 'rim_directional_power' },
+            { key: 'glass-rim-power', uniform: 'rim_power' },
+            { key: 'glass-rim-light-color-intensity', uniform: 'rim_light_color_intensity' },
+            { key: 'glass-sheen-intensity', uniform: 'sheen_intensity' },
+            { key: 'glass-light-angle-deg', uniform: 'light_angle_deg' }
+        ];
+
+        mappings.forEach(map => {
+            // 初回反映
+            this._setFloat(map.uniform, this._settings.get_double(map.key));
+
+            // 変更監視の接続
+            let id = this._settings.connect(`changed::${map.key}`, () => {
+                const val = this._settings.get_double(map.key);
+                this._setFloat(map.uniform, val);
+            });
+            this._settingsIds.push(id);
+        });
+    }
+
+    cleanup() {
+        if (this._settings && this._settingsIds) {
+            this._settingsIds.forEach(id => this._settings.disconnect(id));
+            this._settingsIds = [];
+        }
     }
 
     // Helper method to safely pass float values to the GLSL shader.
@@ -95,9 +151,9 @@ export const LiquidEffect = GObject.registerClass({
 
     setAnimationScale(scale) {
         // UIのスケールに合わせて、物理的な厚みや屈折の距離も比例して小さくする
-        this._setFloat('displacement_scale', 78.5 * scale);
-        this._setFloat('max_z', 25.0 * scale);
-        this._setFloat('chroma_strength', 0.006 * scale); // 色収差もスケールに合わせる
+        this._setFloat('displacement_scale', this._settings.get_double('glass-displacement-scale') * scale);
+        this._setFloat('max_z', this._settings.get_double('glass-max-z') * scale);
+        this._setFloat('chroma_strength', this._settings.get_double('glass-chroma-strength') * scale); // 色収差もスケールに合わせる
     }
 
     // Loads the GLSL fragment shader file from the disk.

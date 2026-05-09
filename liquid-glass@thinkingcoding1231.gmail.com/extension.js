@@ -4,6 +4,7 @@ import { UIManager } from './src/uiManager.js';
 import { DashManager } from './src/dockManager.js';
 import { NotificationManager } from './src/notificationManager.js';
 import { QuickSettingsManager } from './src/quickSettingsManager.js';
+import { OsdManager } from './src/osdManager.js';
 import GLib from 'gi://GLib';
 
 export default class LiquidGlassExtension extends Extension {
@@ -20,6 +21,10 @@ export default class LiquidGlassExtension extends Extension {
         // Initialize the notification manager to apply effects to notifications
         this._notificationManager = new NotificationManager(this.dir.get_path(), this._settings);
         this._notificationManager.setup();
+
+        // Initialize the OSD manager to apply effects to on-screen displays (like volume changes)
+        this._osdManager = new OsdManager(this.dir.get_path(), this._settings);
+        this._osdManager.setup();
 
         this._quickSettingsTimeoutId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 1500, () => {
             this._quickSettingsManager = new QuickSettingsManager(this.dir.get_path(), this._settings);

@@ -202,7 +202,7 @@ export class DashManager {
         this.blurEffect = new Shell.BlurEffect({ radius: blurRadius, mode: Shell.BlurMode.ACTOR });
         this.clipBox.add_effect(this.blurEffect);
 
-        this.effect = new LiquidEffect({ extensionPath: this.extensionPath });
+        this.effect = new LiquidEffect({ extensionPath: this.extensionPath, settings: this._settings });
         this.effect.setPadding(SHADER_PADDING);
         this.effect.setTintColor(...hexToColorArray(tintColorStr));
         this.effect.setTintStrength(tintStrength);
@@ -644,12 +644,16 @@ export class DashManager {
             }
             this._frameSyncId = 0;
         }
-
+        
+        if (this.effect) {
+            this.effect.cleanup();
+            this.effect = null;
+        }
+        
         if (this.bgActor) { 
             this.bgActor.destroy(); 
             this.bgActor = null; 
         }
-        this.effect = null;
         this.blurEffect = null;
         this.bgClone = null;
         this.windowClonesContainer = null;

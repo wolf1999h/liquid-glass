@@ -221,7 +221,7 @@ export class NotificationManager {
         this.blurEffect = new Shell.BlurEffect({ radius: blurRadius, mode: Shell.BlurMode.ACTOR });
         this.clipBox.add_effect(this.blurEffect);
 
-        this.effect = new LiquidEffect({ extensionPath: this.extensionPath });
+        this.effect = new LiquidEffect({ extensionPath: this.extensionPath, settings: this._settings });
         this.effect.setPadding(SHADER_PADDING);
         this.effect.setTintColor(...this._hexToColorArray(tintColorStr));
         this.effect.setTintStrength(this._baseTint);
@@ -252,6 +252,7 @@ export class NotificationManager {
         };
 
         this._frameSyncId = this._laterAdd(frameLaterType, frameTick);
+        this._isFirstAdaptiveRun = true;
         this._startAdaptiveColorSampling();
     }
 
@@ -491,13 +492,13 @@ export class NotificationManager {
         return this._findAllTextActors(this.currentBanner);
     }
 
-    _setActorColor(actor, color) {
+    _setActorColor(actor, color, skipAnimations = false) {
         if (!actor || typeof actor.set_style !== 'function') return;
 
         if (actor._currentTargetColor === color) return;
         actor._currentTargetColor = color;
 
-        this._animateActorColor(actor, color);
+        this._animateActorColor(actor, color, 380, skipAnimations);
     }
 
     _clearAdaptiveStyles() {
@@ -517,10 +518,10 @@ export class NotificationManager {
         this._styledActors.clear();
     }
 
-    _applyAdaptiveColorMap(colorMap) {
+    _applyAdaptiveColorMap(colorMap, skipAnimations = false) {
         if (!colorMap || colorMap.size === 0) return;
         for (const [actor, color] of colorMap.entries()) {
-            this._setActorColor(actor, color);
+            this._setActorColor(actor, color, skipAnimations);
         }
     }
 
@@ -582,7 +583,8 @@ export class NotificationManager {
         this._contrastSampler
             .chooseColorsForActors(targets, this._adaptiveConfig)
             .then(colorMap => {
-                this._applyAdaptiveColorMap(colorMap);
+                this._applyAdaptiveColorMap(colorMap, this._isFirstAdaptiveRun);
+                this._isFirstAdaptiveRun = false; // 初回適用後にフラグを下ろす
             })
             .catch(e => {
                 console.error(`[Liquid Glass] Notification adaptive color update failed: ${e}`);
@@ -605,7 +607,7 @@ export class NotificationManager {
         return "#" + (1 << 24 | r << 16 | g << 8 | b).toString(16).slice(1);
     }
 
-    _animateActorColor(actor, targetHexColor) {
+    _animateActorColor(actor, targetHexColor, durationMs = 380, skipAnimations = false) {
         if (!actor || Object.keys(actor).length === 0) return;
 
         if (actor._colorTweenId) {
@@ -618,7 +620,11 @@ export class NotificationManager {
 
         let targetRgb = this._hexToRgb(targetHexColor);
         let startTime = GLib.get_monotonic_time();
-        let durationMs = 380;
+
+        if (skipAnimations) {
+            actor.set_style(`color: ${targetHexColor}; -st-icon-foreground-color: ${targetHexColor};`);
+            return;
+        }
 
         actor._colorTweenId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 16, () => {
             if (!actor || Object.keys(actor).length === 0) return GLib.SOURCE_REMOVE;
@@ -679,13 +685,15 @@ export class NotificationManager {
             else if (Meta.later_remove) Meta.later_remove(this._frameSyncId);
             this._frameSyncId = 0;
         }
-
+        if (this.effect) {
+            this.effect.cleanup();
+            this.effect = null;
+        }
         if (this.bgActor) { 
             this.bgActor.destroy(); 
             this.bgActor = null; 
         }
         
-        this.effect = null;
         this.blurEffect = null;
         this.bgClone = null;
         this.windowClonesContainer = null;
@@ -701,6 +709,8 @@ export class NotificationManager {
         this._lastBannerH = undefined; 
         this._stableBaseW = undefined;
         this._stableBaseH = undefined;
+
+        this._isFirstAdaptiveRun = true;
     }
 
     cleanup() {

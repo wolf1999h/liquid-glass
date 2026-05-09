@@ -274,7 +274,7 @@ export class QuickSettingsManager {
         this.fboContainer.add_effect(this.blurEffect);
 
         // Apply our custom GLSL liquid shader to the outer background actor
-        this.effect = new LiquidEffect({ extensionPath: this.extensionPath });
+        this.effect = new LiquidEffect({ extensionPath: this.extensionPath, settings: this._settings });
         
         // Tell the shader about the padding so it calculates refraction coordinates correctly
         this.effect.setPadding(SHADER_PADDING);
@@ -399,6 +399,7 @@ export class QuickSettingsManager {
         if (this._hasAutoRefreshed === undefined) {
             this._hasAutoRefreshed = false;
         }
+
         
         // Handle the first open as a plain GNOME quick settings open; apply custom behavior only afterwards.
         this._signals.push(this.menu.connect('open-state-changed', (menu, isOpen) => {
@@ -411,7 +412,7 @@ export class QuickSettingsManager {
                 this._stableBaseW = undefined;
                 this._stableBaseH = undefined;
                 startFrameSync();
-                this._startAdaptiveColorSampling();
+                this._startAdaptiveColorSampling(true); // Skip animations on the first open for instant feedback
                 this._startButtonAlphaSampling();
                 this._startAnimation(1);
                 return;
@@ -756,7 +757,7 @@ export class QuickSettingsManager {
     }
 
     // Initiates the color change for a specific actor
-    _setActorColor(actor, color) {
+    _setActorColor(actor, color, skipAnimations = false) {
         if (!actor || typeof actor.set_style !== 'function') return;
 
         if (!this._styledActors.has(actor)) {
@@ -775,7 +776,7 @@ export class QuickSettingsManager {
         actor._currentInsensitiveState = isInsensitive;
 
         // Kick off the color transition animation!
-        this._animateActorColor(actor, color, isInsensitive);
+        this._animateActorColor(actor, color, isInsensitive, 380, skipAnimations);
     }
 
     // Removes all dynamically applied adaptive text color styles and stops related animations
@@ -816,21 +817,21 @@ export class QuickSettingsManager {
     }
 
     // Iterates through the color map and applies the new target colors to the respective actors
-    _applyAdaptiveColorMap(colorMap) {
+    _applyAdaptiveColorMap(colorMap, skipAnimations = false) {
         if (!colorMap || colorMap.size === 0)
             return;
 
         for (const [actor, color] of colorMap.entries()) {
-            this._setActorColor(actor, color);
+            this._setActorColor(actor, color, skipAnimations);
         }
     }
 
     // Starts the timer for periodically sampling contrast and updating adaptive text colors
-    _startAdaptiveColorSampling() {
+    _startAdaptiveColorSampling(skipAnimations = false) {
         if (!this._adaptiveConfig.enabled)
             return;
 
-        this._updateAdaptiveTextColors();
+        this._updateAdaptiveTextColors(skipAnimations);
 
         if (this._adaptiveTimerId !== 0)
             return;
@@ -844,7 +845,7 @@ export class QuickSettingsManager {
                     return GLib.SOURCE_REMOVE;
                 }
 
-                this._updateAdaptiveTextColors();
+                this._updateAdaptiveTextColors(false);
                 return GLib.SOURCE_CONTINUE;
             }
         );
@@ -859,7 +860,7 @@ export class QuickSettingsManager {
     }
 
     // Collects target actors, samples their contrast, and triggers color updates
-    _updateAdaptiveTextColors() {
+    _updateAdaptiveTextColors(skipAnimations = false) {
         if (!this._adaptiveConfig.enabled || this._adaptiveInFlight)
             return;
 
@@ -872,7 +873,7 @@ export class QuickSettingsManager {
         this._contrastSampler
             .chooseColorsForActors(targets, this._adaptiveConfig)
             .then(colorMap => {
-                this._applyAdaptiveColorMap(colorMap);
+                this._applyAdaptiveColorMap(colorMap, skipAnimations);
             })
             .catch(e => {
                 console.error(`[Liquid Glass] Menu adaptive color update failed: ${e}`);
@@ -897,7 +898,7 @@ export class QuickSettingsManager {
         return "#" + (1 << 24 | r << 16 | g << 8 | b).toString(16).slice(1);
     }
 
-    _animateActorColor(actor, targetHexColor, isInsensitive) {
+    _animateActorColor(actor, targetHexColor, isInsensitive, durationMs = 380, skipAnimations = false) {
         if (!actor || Object.keys(actor).length === 0) return;
 
         // Cancel any existing color tween if running (handles mid-transition target changes).
@@ -916,9 +917,16 @@ export class QuickSettingsManager {
         // 無効状態なら透明度を50%(0.5)にし、有効なら100%(1.0)にする
         let targetAlpha = isInsensitive ? 0.5 : 1.0;
         let startAlpha = startColor.alpha / 255.0; // Clutter.Colorのalphaは0〜255で返る
+
+        if (skipAnimations) {
+            let alphaStr = targetAlpha.toFixed(3);
+            let targetRgba = `rgba(${targetRgb.r}, ${targetRgb.g}, ${targetRgb.b}, ${alphaStr})`;
+            actor.set_style(`color: ${targetRgba}; -st-icon-foreground-color: ${targetRgba};`);
+            return;
+        }
         
         let startTime = GLib.get_monotonic_time();
-        let durationMs = 380; // Animation duration in milliseconds
+        // let durationMs = 380; // Animation duration in milliseconds
 
         actor._colorTweenId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 32, () => {
             if (!actor || Object.keys(actor).length === 0) return GLib.SOURCE_REMOVE;
@@ -1324,13 +1332,17 @@ export class QuickSettingsManager {
             }
         }
         
+        if (this.effect) {
+            this.effect.cleanup();
+            this.effect = null;
+        }
+
         // Destroy all injected actors and clones
         if (this.bgActor) { 
             this.bgActor.destroy(); 
             this.bgActor = null; 
         }
         
-        this.effect = null;
         this.blurEffect = null;
         this.bgClone = null;
         this.fboContainer = null;

@@ -255,7 +255,7 @@ export class UIManager {
         this.fboContainer.add_effect(this.blurEffect);
 
         // Apply our custom GLSL liquid shader to the outer background actor
-        this.effect = new LiquidEffect({ extensionPath: this.extensionPath });
+        this.effect = new LiquidEffect({ extensionPath: this.extensionPath, settings: this._settings });
         
         // Tell the shader about the padding so it calculates refraction coordinates correctly
         this.effect.setPadding(SHADER_PADDING);
@@ -375,7 +375,7 @@ export class UIManager {
                 this._stableBaseW = undefined;
                 this._stableBaseH = undefined;
                 startFrameSync();
-                this._startAdaptiveColorSampling();
+                this._startAdaptiveColorSampling(true); // Skip animations on the first open for instant feedback
             } else {
                 this._stopAdaptiveColorSampling();
             }
@@ -476,12 +476,12 @@ export class UIManager {
                 if (!Number.isNaN(btnX) && !Number.isNaN(btnY)) {
                     // Assume the menu opens centered directly below the clock button
                     animAbsX = btnX + (btnW / 2) - (w / 2);
-                    animAbsY = btnY + btnH + MENU_Y_OFFSET;
+                    animAbsY = btnY + btnH + this._menuYoffset;
                 } else {
                     // Ultimate fallback: Just place it in the top-center of the primary monitor
                     let monitor = Main.layoutManager.primaryMonitor;
                     animAbsX = (monitor.width / 2) - (w / 2);
-                    animAbsY = (Main.panel.height || 27) + MENU_Y_OFFSET; 
+                    animAbsY = (Main.panel.height || 27) + this._menuYoffset; 
                 }
             }
         } else {
@@ -700,7 +700,7 @@ export class UIManager {
     }
 
     // Initiates the color change for a specific actor
-    _setActorColor(actor, color) {
+    _setActorColor(actor, color, skipAnimations = false) {
         if (!actor || typeof actor.set_style !== 'function') return;
 
         if (!this._styledActors.has(actor)) {
@@ -719,7 +719,7 @@ export class UIManager {
         actor._currentInsensitiveState = isInsensitive;
 
         // Kick off the color transition animation!
-        this._animateActorColor(actor, color, isInsensitive);
+        this._animateActorColor(actor, color, isInsensitive, 380, skipAnimations);
     }
 
     // Removes all dynamically applied adaptive text color styles and stops related animations
@@ -760,21 +760,21 @@ export class UIManager {
     }
 
     // Iterates through the color map and applies the new target colors to the respective actors
-    _applyAdaptiveColorMap(colorMap) {
+    _applyAdaptiveColorMap(colorMap, skipAnimations = false) {
         if (!colorMap || colorMap.size === 0)
             return;
 
         for (const [actor, color] of colorMap.entries()) {
-            this._setActorColor(actor, color);
+            this._setActorColor(actor, color, skipAnimations);
         }
     }
 
     // Starts the timer for periodically sampling contrast and updating adaptive text colors
-    _startAdaptiveColorSampling() {
+    _startAdaptiveColorSampling(skipAnimations = false) {
         if (!this._adaptiveConfig.enabled)
             return;
 
-        this._updateAdaptiveTextColors();
+        this._updateAdaptiveTextColors(skipAnimations);
 
         if (this._adaptiveTimerId !== 0)
             return;
@@ -788,7 +788,7 @@ export class UIManager {
                     return GLib.SOURCE_REMOVE;
                 }
 
-                this._updateAdaptiveTextColors();
+                this._updateAdaptiveTextColors(false);
                 return GLib.SOURCE_CONTINUE;
             }
         );
@@ -803,7 +803,7 @@ export class UIManager {
     }
 
     // Collects target actors, samples their contrast, and triggers color updates
-    _updateAdaptiveTextColors() {
+    _updateAdaptiveTextColors(skipAnimations = false) {
         if (!this._adaptiveConfig.enabled || this._adaptiveInFlight)
             return;
 
@@ -816,7 +816,7 @@ export class UIManager {
         this._contrastSampler
             .chooseColorsForActors(targets, this._adaptiveConfig)
             .then(colorMap => {
-                this._applyAdaptiveColorMap(colorMap);
+                this._applyAdaptiveColorMap(colorMap, skipAnimations);
             })
             .catch(e => {
                 console.error(`[Liquid Glass] Menu adaptive color update failed: ${e}`);
@@ -841,7 +841,7 @@ export class UIManager {
         return "#" + (1 << 24 | r << 16 | g << 8 | b).toString(16).slice(1);
     }
 
-    _animateActorColor(actor, targetHexColor, isInsensitive) {
+    _animateActorColor(actor, targetHexColor, isInsensitive, durationMs = 380, skipAnimations = false) {
         if (!actor || Object.keys(actor).length === 0) return;
 
         // Cancel any existing color tween if running (handles mid-transition target changes).
@@ -860,9 +860,16 @@ export class UIManager {
         // 無効状態なら透明度を50%(0.5)にし、有効なら100%(1.0)にする
         let targetAlpha = isInsensitive ? 0.5 : 1.0;
         let startAlpha = startColor.alpha / 255.0; // Clutter.Colorのalphaは0〜255で返る
+
+        if (skipAnimations) {
+            let alphaStr = targetAlpha.toFixed(3);
+            let targetRgba = `rgba(${targetRgb.r}, ${targetRgb.g}, ${targetRgb.b}, ${alphaStr})`;
+            actor.set_style(`color: ${targetRgba}; -st-icon-foreground-color: ${targetRgba};`);
+            return;
+        }
         
         let startTime = GLib.get_monotonic_time();
-        let durationMs = 380; // Animation duration in milliseconds
+        // let durationMs = 380; // Animation duration in milliseconds
 
         actor._colorTweenId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 32, () => {
             if (!actor || Object.keys(actor).length === 0) return GLib.SOURCE_REMOVE;
@@ -1036,6 +1043,12 @@ export class UIManager {
             this.menu.disconnect(sigId); 
         }
         this._signals = [];
+
+
+        if (this._tickId && this._tickId !== 0) {
+            GLib.Source.remove(this._tickId);
+            this._tickId = 0;
+        }
         
         // Stop the render frame loop
         if (this._frameSyncId !== 0) {
@@ -1079,13 +1092,18 @@ export class UIManager {
             }
         }
         
-        // Destroy all injected actors and clones
+        // DESTROY EFFECT FIRST
+        if (this.effect) {
+            this.effect.cleanup();
+            this.effect = null;
+        }
+
+        // DESTROY ACTOR SECOND
         if (this.bgActor) { 
             this.bgActor.destroy(); 
             this.bgActor = null; 
         }
-        
-        this.effect = null;
+
         this.blurEffect = null;
         this.bgClone = null;
         this.windowClonesContainer = null;

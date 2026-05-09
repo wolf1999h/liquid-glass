@@ -81,7 +81,7 @@ export default class LiquidGlassPreferences extends ExtensionPreferences {
 
         // --- Quick Settings タブ ---
         const qsPage = new Adw.PreferencesPage({
-            title: 'Quick Settings (Experimental)',
+            title: 'Quick Settings',
             icon_name: 'shapes-large-symbolic',
         });
         window.add(qsPage);
@@ -90,6 +90,8 @@ export default class LiquidGlassPreferences extends ExtensionPreferences {
         qsPage.add(qsGroup);
 
         this._addSwitchRow(qsGroup, settings, 'enable-quick-settings-glass', 'Enable Glass Effect', 'Apply to quick settings panel');
+        this._addSwitchRow(qsGroup, settings, 'quick-settings-enable-adaptive-text-color', 'Adaptive Text Color', 'Adjust text contrast automatically');
+        this._addSpinRow(qsGroup, settings, 'quick-settings-sample-interval-ms', 'Sample Interval (ms)', 'Contrast update frequency', 100, 2000, 50);
         this._addSpinRow(qsGroup, settings, 'quick-settings-glass-expand', 'Glass Expand', 'Extra area for the effect', 0, 50, 1);
         this._addSpinRow(qsGroup, settings, 'quick-settings-x-offset', 'X Offset', 'Horizontal offset adjustment', -100, 100, 1);
         this._addSpinRow(qsGroup, settings, 'quick-settings-y-offset', 'Y Offset', 'Vertical offset adjustment', 0, 100, 1);
@@ -97,6 +99,56 @@ export default class LiquidGlassPreferences extends ExtensionPreferences {
         this._addSpinRow(qsGroup, settings, 'quick-settings-tint-strength', 'Tint Strength', 'Intensity of the color tint', 0.0, 1.0, 0.01);
         this._addSpinRow(qsGroup, settings, 'quick-settings-blur-radius', 'Blur Radius', 'Background blur intensity', 0, 100, 1);
         this._addSpinRow(qsGroup, settings, 'quick-settings-corner-radius', 'Corner Radius', 'Roundness of the corners', 0, 200, 1);
+
+        // --- OSD タブ ---
+        const osdPage = new Adw.PreferencesPage({
+            title: 'OSD',
+            icon_name: 'audio-volume-medium-symbolic',
+        });
+        window.add(osdPage);
+
+        const osdGroup = new Adw.PreferencesGroup({ title: 'OSD Settings (Experimental)' });
+        osdPage.add(osdGroup);
+
+        this._addSwitchRow(osdGroup, settings, 'enable-osd-glass', 'Enable Glass Effect', 'Apply to on-screen displays (like volume changes)');
+        this._addSwitchRow(osdGroup, settings, 'osd-enable-adaptive-text-color', 'Adaptive Text Color', 'Adjust text contrast automatically');
+        this._addSpinRow(osdGroup, settings, 'osd-sample-interval-ms', 'Sample Interval (ms)', 'Contrast update frequency', 100, 2000, 50);
+        this._addSpinRow(osdGroup, settings, 'osd-glass-expand', 'Glass Expand', 'Extra area for the effect', 0, 50, 1);
+        this._addSpinRow(osdGroup, settings, 'osd-y-offset', 'Y Offset', 'Vertical offset adjustment', 0, 100, 1);
+        this._addColorRow(osdGroup, settings, 'osd-tint-color', 'Tint Color', 'Color of the glass tint');
+        this._addSpinRow(osdGroup, settings, 'osd-tint-strength', 'Tint Strength', 'Intensity of the color tint', 0.0, 1.0, 0.01);
+        this._addSpinRow(osdGroup, settings, 'osd-blur-radius', 'Blur Radius', 'Background blur intensity', 0, 100, 1);
+        this._addSpinRow(osdGroup, settings, 'osd-corner-radius', 'Corner Radius', 'Roundness of the corners', 0, 200, 1);
+
+        // --- Glass Properties タブ ---
+        const shaderPage = new Adw.PreferencesPage({
+            title: 'Advanced Glass',
+            icon_name: 'image-adjust-shadows-symbolic',
+        });
+        window.add(shaderPage);
+
+        const physGroup = new Adw.PreferencesGroup({ title: 'Physical & Optical Properties' });
+        shaderPage.add(physGroup);
+
+        this._addSpinRow(physGroup, settings, 'glass-max-z', 'Maximum Z Depth', 'Physical thickness of the glass', 0.0, 100.0, 1.0);
+        this._addSpinRow(physGroup, settings, 'glass-displacement-scale', 'Displacement Scale', 'Strength of light refraction', 0.0, 200.0, 1.0);
+        this._addSpinRow(physGroup, settings, 'glass-edge-smoothing', 'Edge Smoothing', 'Anti-aliasing feathering width', 0.0, 10.0, 0.1);
+        this._addSpinRow(physGroup, settings, 'glass-profile-shape-n', 'Profile Shape N', 'Curvature shape of the surface', 1.0, 20.0, 0.1);
+        this._addSpinRow(physGroup, settings, 'glass-ior', 'Index of Refraction', 'Optical density (1.5 - 2.4)', 1.0, 4.0, 0.01);
+        this._addSpinRow(physGroup, settings, 'glass-chroma-strength', 'Chroma Strength', 'RGB color separation', 0.0, 0.1, 0.001);
+
+        const lightGroup = new Adw.PreferencesGroup({ title: 'Lighting & Reflections' });
+        shaderPage.add(lightGroup);
+
+        this._addSpinRow(lightGroup, settings, 'glass-specular-intensity', 'Specular Intensity', 'Brightness of highlights', 0.0, 5.0, 0.1);
+        this._addSpinRow(lightGroup, settings, 'glass-shininess', 'Shininess', 'Sharpness of reflections', 1.0, 200.0, 1.0);
+        this._addSpinRow(lightGroup, settings, 'glass-rim-width', 'Rim Width', 'Width of the edge lighting', 0.0, 20.0, 0.1);
+        this._addSpinRow(lightGroup, settings, 'glass-rim-intensity', 'Rim Intensity', 'Brightness of rim light', 0.0, 5.0, 0.1);
+        this._addSpinRow(lightGroup, settings, 'glass-rim-directional-power', 'Rim Directional Power', 'Light direction effect on rim', 0.0, 10.0, 0.1);
+        this._addSpinRow(lightGroup, settings, 'glass-rim-power', 'Rim Fresnel Power', 'Fresnel falloff for rim light', 0.0, 20.0, 0.1);
+        this._addSpinRow(lightGroup, settings, 'glass-rim-light-color-intensity', 'Rim Light Color Intensity', 'Multiplier for rim color', 0.0, 5.0, 0.1);
+        this._addSpinRow(lightGroup, settings, 'glass-sheen-intensity', 'Sheen Intensity', 'Background sheen across surface', 0.0, 2.0, 0.01);
+        this._addSpinRow(lightGroup, settings, 'glass-light-angle-deg', 'Light Angle (Deg)', 'Directional angle of light source', 0.0, 360.0, 1.0);
     }
 
     // --- 便利メソッド群 ---
@@ -110,11 +162,15 @@ export default class LiquidGlassPreferences extends ExtensionPreferences {
 
     // 数値入力（整数・小数両対応）
     _addSpinRow(group, settings, key, title, subtitle, min, max, step) {
+        // stepの値に応じて小数点以下の表示桁数を調整
+        let digits = 0;
+        if (step < 1) digits = 2;
+        if (step < 0.01) digits = 3;
         const row = new Adw.SpinRow({
             title,
             subtitle,
             adjustment: new Gtk.Adjustment({ lower: min, upper: max, step_increment: step }),
-            digits: step < 1 ? 2 : 0, // 小数の場合は小数点第2位まで表示
+            digits: digits,
         });
         group.add(row);
         settings.bind(key, row, 'value', Gio.SettingsBindFlags.DEFAULT);
