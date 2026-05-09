@@ -50,6 +50,7 @@ export class QuickSettingsManager {
         
         this.bgClone = null;
         this.windowClonesContainer = null;
+        this.fboContainer = null;
 
         // Map to keep track of active windows and their corresponding clone actors.
         this._windowClones = new Map();
@@ -101,6 +102,14 @@ export class QuickSettingsManager {
         let g = parseInt(hex.slice(3, 5), 16) / 255.0;
         let b = parseInt(hex.slice(5, 7), 16) / 255.0;
         return [r, g, b];
+    }
+
+    _getMenuMonitorGeometry() {
+        let monitorIndex = Main.layoutManager.findIndexForActor(this.targetActor);
+        if (monitorIndex < 0)
+            monitorIndex = Main.layoutManager.primaryIndex;
+
+        return Main.layoutManager.monitors[monitorIndex] || Main.layoutManager.primaryMonitor;
     }
 
     _applyMenuOffsets() {
@@ -234,6 +243,9 @@ export class QuickSettingsManager {
             clip_to_allocation: true
         });
         this.bgActor.add_child(this.clipBox);
+
+        this.fboContainer = new Clutter.Actor();
+        this.clipBox.add_child(this.fboContainer);
         
         // Set pivot points for scaling. 
         // The menu scales from the top-center (0.5, 0.0)
@@ -259,7 +271,7 @@ export class QuickSettingsManager {
 
         // Apply native GNOME blur to the internal clipBox (which contains the clones)
         this.blurEffect = new Shell.BlurEffect({ radius: blurRadius, mode: Shell.BlurMode.ACTOR });
-        this.clipBox.add_effect(this.blurEffect);
+        this.fboContainer.add_effect(this.blurEffect);
 
         // Apply our custom GLSL liquid shader to the outer background actor
         this.effect = new LiquidEffect({ extensionPath: this.extensionPath });
@@ -321,17 +333,17 @@ export class QuickSettingsManager {
             // Clone the desktop background and track its destruction
             this.bgClone = new Clutter.Clone({ source: Main.layoutManager._backgroundGroup });
             this.bgClone.connect('destroy', () => { this.bgClone = null; });
-            this.clipBox.add_child(this.bgClone); 
+            this.fboContainer.add_child(this.bgClone); 
 
             // Create and track overview clone container
             this.overviewCloneContainer = new Clutter.Actor();
             this.overviewCloneContainer.connect('destroy', () => { this.overviewCloneContainer = null; });
-            this.clipBox.add_child(this.overviewCloneContainer);
+            this.fboContainer.add_child(this.overviewCloneContainer);
 
             // Create and track window clones container
             this.windowClonesContainer = new Clutter.Actor();
             this.windowClonesContainer.connect('destroy', () => { this.windowClonesContainer = null; });
-            this.clipBox.add_child(this.windowClonesContainer);
+            this.fboContainer.add_child(this.windowClonesContainer);
 
             this._windowClones.clear();
             this._overviewClone = null; 
@@ -350,7 +362,8 @@ export class QuickSettingsManager {
 
                 // Clone the active window and place it at its exact screen coordinates
                 let clone = new Clutter.Clone({ source: w });
-                clone.set_position(w.x, w.y);
+                let [parentX, parentY] = this.windowClonesContainer.get_transformed_position();
+                clone.set_position(w.x - parentX, w.y - parentY);
                 this.windowClonesContainer.add_child(clone);
 
                 this._windowClones.set(w, clone);
@@ -509,19 +522,19 @@ export class QuickSettingsManager {
                 animAbsY = this._lastValidAnimAbsY;
             } else {
                 // If no history exists, calculate based on the top panel clock button
-                let buttonActor = Main.panel.statusArea.dateMenu.actor;
+                let buttonActor = Main.panel.statusArea.quickSettings.actor;
                 let [btnX, btnY] = buttonActor.get_transformed_position();
                 let [btnW, btnH] = buttonActor.get_size();
                 
                 if (!Number.isNaN(btnX) && !Number.isNaN(btnY)) {
                     // Assume the menu opens centered directly below the clock button
                     animAbsX = btnX + (btnW / 2) - (w / 2);
-                    animAbsY = btnY + btnH + MENU_Y_OFFSET;
+                    animAbsY = btnY + btnH + (this._menuYoffset ?? 0);
                 } else {
                     // Ultimate fallback: Just place it in the top-center of the primary monitor
                     let monitor = Main.layoutManager.primaryMonitor;
                     animAbsX = (monitor.width / 2) - (w / 2);
-                    animAbsY = (Main.panel.height || 27) + MENU_Y_OFFSET; 
+                    animAbsY = (Main.panel.height || 27) + (this._menuYoffset ?? 0); 
                 }
             }
         } else {
@@ -558,17 +571,36 @@ export class QuickSettingsManager {
                 this._lastBgW = bgW; this._lastBgH = bgH;
                 this._lastBgX = bgX; this._lastBgY = bgY;
             }
+
+            // Keep inverse offset synced every frame so cloned content does not move with animations.
+            if (this.fboContainer) {
+                let monitor = this._getMenuMonitorGeometry();
+                let monitorX = monitor?.x ?? 0;
+                let monitorY = monitor?.y ?? 0;
+                let monitorW = Math.max(1, monitor?.width ?? 1);
+                let monitorH = Math.max(1, monitor?.height ?? 1);
+
+                let fboOffsetX = bgX - monitorX;
+                let fboOffsetY = bgY - monitorY;
+                this.fboContainer.set_position(-fboOffsetX, -fboOffsetY);
+                this.fboContainer.set_size(monitorW, monitorH);
+            }
         }
 
         // Apply a negative offset to the clones inside the clipBox.
         // This ensures the cloned background matches the real desktop coordinates perfectly,
         // even while the menu is scaling and moving around.
         if (this.bgClone && this.windowClonesContainer && !Number.isNaN(bgX) && !Number.isNaN(bgY)) {
-            this.bgClone.set_position(-bgX, -bgY);
-            this.windowClonesContainer.set_position(-bgX, -bgY);
+            this.bgClone.set_position(0, 0);
+            this.windowClonesContainer.set_position(0, 0);
+
+            let monitor = this._getMenuMonitorGeometry();
+            let monitorW = Math.max(1, monitor?.width ?? 1);
+            let monitorH = Math.max(1, monitor?.height ?? 1);
+            this.bgClone.set_size(monitorW, monitorH);
 
             if (this.overviewCloneContainer) {
-                this.overviewCloneContainer.set_position(-bgX, -bgY);
+                this.overviewCloneContainer.set_position(0, 0);
             }
 
             // Efficient window synchronization logic.
@@ -605,7 +637,8 @@ export class QuickSettingsManager {
                         }
                         
                         // Keep the position synchronized with the real window.
-                        clone.set_position(w.x, w.y);
+                        let [parentX, parentY] = this.windowClonesContainer.get_transformed_position();
+                        clone.set_position(w.x - parentX, w.y - parentY);
 
                         // Update the Z-index dynamically to reflect window focus changes.
                         this.windowClonesContainer.set_child_at_index(clone, zIndex);
@@ -1300,6 +1333,7 @@ export class QuickSettingsManager {
         this.effect = null;
         this.blurEffect = null;
         this.bgClone = null;
+        this.fboContainer = null;
         this.windowClonesContainer = null;
         
         this._windowClones.clear();
