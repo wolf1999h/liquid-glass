@@ -160,7 +160,7 @@ export class NotificationManager {
             return;
         this._isEffectActive = true;
         // @ts-expect-error: _bannerBinは内部プロパティのため型定義に存在しない
-        let bannerBin = this.tray._bannarBin;
+        let bannerBin = this.tray._bannerBin;
         if (!bannerBin) {
             console.error("[Liquid Glass] _bannerBin is not found. GNOME internal structure might have changed.");
             return;
