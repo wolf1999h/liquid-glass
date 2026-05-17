@@ -40,6 +40,22 @@
       <default>12</default>
       <summary>Glass expand pixels</summary>
     </key>
+    <key name="enable-menu-animation" type="b">
+      <default>true</default>
+      <summary>Enable menu animation</summary>
+    </key>
+    <key name="menu-spring-stiffness" type="d">
+      <default>120.0</default>
+      <summary>Spring stiffness</summary>
+    </key>
+    <key name="menu-spring-damping" type="d">
+      <default>8.0</default>
+      <summary>Spring damping</summary>
+    </key>
+    <key name="menu-spring-mass" type="d">
+      <default>1.0</default>
+      <summary>Spring mass</summary>
+    </key>
     <key name="menu-x-offset" type="i">
       <default>0</default>
       <summary>X offset</summary>
@@ -124,6 +140,22 @@
     <key name="enable-quick-settings-glass" type="b">
       <default>true</default>
       <summary>Enable glass effect for Quick Settings</summary>
+    </key>
+    <key name="enable-quick-settings-animation" type="b">
+      <default>true</default>
+      <summary>Enable quick settings animation</summary>
+    </key>
+    <key name="quick-settings-spring-stiffness" type="d">
+      <default>120.0</default>
+      <summary>Spring stiffness</summary>
+    </key>
+    <key name="quick-settings-spring-damping" type="d">
+      <default>8.0</default>
+      <summary>Spring damping</summary>
+    </key>
+    <key name="quick-settings-spring-mass" type="d">
+      <default>1.0</default>
+      <summary>Spring mass</summary>
     </key>
     <key name="quick-settings-enable-adaptive-text-color" type="b">
       <default>false</default>
@@ -293,7 +325,6 @@
       <summary>Light angle (Degrees)</summary>
       <description>The directional angle of the virtual light source illuminating the glass.</description>
     </key>
-
 
   </schema>
 </schemalist>

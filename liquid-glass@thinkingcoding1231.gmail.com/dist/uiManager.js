@@ -5,6 +5,7 @@ import Shell from 'gi://Shell';
 import St from 'gi://St';
 import GLib from 'gi://GLib';
 import Meta from 'gi://Meta';
+import Gio from 'gi://Gio';
 import { LiquidEffect } from './liquidEffect.js';
 import { StageContrastSampler, AdaptiveContrastConfig } from './contrastSampler.js';
 // ========== Configuration Parameters ==========
@@ -36,8 +37,6 @@ export class UIManager {
     _glassExpand;
     _menuXoffset;
     _menuYoffset;
-    _springScale;
-    _springPos;
     _tickId;
     _contrastSampler;
     _adaptiveTimerId;
@@ -55,6 +54,16 @@ export class UIManager {
     _lastBgH;
     _lastBgX;
     _lastBgY;
+    // Spring physics parameters
+    _springScale;
+    _springPos;
+    _springStiffness;
+    _springDamping;
+    _springMass;
+    _enableAnimation;
+    _interfaceSettings = null;
+    _accentColorSignalId = 0;
+    _dynamicCssFile = null;
     constructor(extensionPath, settings) {
         this.extensionPath = extensionPath;
         this._settings = settings;
@@ -82,6 +91,10 @@ export class UIManager {
         // Spring(stiffness, damping, mass)
         this._springScale = new Spring(120, 8, 1.0);
         this._springPos = new Spring(300, 12, 1.0);
+        this._springStiffness = 120;
+        this._springDamping = 8;
+        this._springMass = 1.0;
+        this._enableAnimation = false;
         this._tickId = 0;
         this._contrastSampler = new StageContrastSampler();
         this._adaptiveTimerId = 0;
@@ -106,9 +119,83 @@ export class UIManager {
         if (!this._settings)
             return;
         this._bindSettings();
+        this._enableAnimation = this._settings.get_boolean('enable-menu-animation');
+        this._springStiffness = this._settings.get_double('menu-spring-stiffness');
+        this._springDamping = this._settings.get_double('menu-spring-damping');
+        this._springMass = this._settings.get_double('menu-spring-mass');
+        this._springScale.updateParams(this._springStiffness, this._springDamping, this._springMass);
+        this._springPos.updateParams(this._springStiffness, this._springDamping, this._springMass);
+        this._interfaceSettings = new Gio.Settings({ schema_id: 'org.gnome.desktop.interface' });
+        this._accentColorSignalId = this._interfaceSettings.connect('changed::accent-color', () => {
+            console.log(`[Liquid Glass] System accent color changed.`);
+            // テーマの更新を少し待ってから取得
+            GLib.timeout_add(GLib.PRIORITY_DEFAULT, 200, () => {
+                this._applySystemAccentColor();
+                return GLib.SOURCE_REMOVE;
+            });
+        });
+        // 初回実行
+        this._applySystemAccentColor();
         // uiManager は 'enable-menu-glass'、notificationManager は 'notification-enable-glass' （※スキーマによる）
         if (this._settings.get_boolean('enable-menu-glass')) {
             this._applyEffect();
+        }
+    }
+    _applySystemAccentColor() {
+        if (!this.targetActor)
+            return;
+        // 1. 親要素と子要素を作成して、GNOMEテーマが要求する正しい階層を再現
+        const parent = new St.Widget({ style_class: 'calendar' });
+        const child = new St.Widget({ style_class: 'calendar-day calendar-today' });
+        parent.add_child(child);
+        // 2. UIグループに追加してスタイルを強制計算させる
+        Main.layoutManager.uiGroup.add_child(parent);
+        child.ensure_style();
+        // 3. 計算済みの色を取得
+        const themeNode = child.get_theme_node();
+        const bgColor = themeNode.get_background_color();
+        // 4. 用が済んだらすぐお掃除
+        Main.layoutManager.uiGroup.remove_child(parent);
+        parent.destroy();
+        // 5. HEXに変換
+        const colorStr = this._rgbToHex(bgColor.red, bgColor.green, bgColor.blue);
+        console.log(`[Liquid Glass] Set system accent color to ${colorStr}`);
+        /*
+        // 6. 親要素にCSS変数としてセット
+        let currentStyle = this.targetActor.get_style() || '';
+        currentStyle = currentStyle.replace(/--system-accent-color-yeah:\s*[^;]+;?/g, ''); // 重複防止
+        this.targetActor.set_style(`${currentStyle} --system-accent-color-yeah: ${colorStr};`);
+        */
+        // 3. その場で読み込ませる動的CSSの内容を作成（変数は使わず、直接色を埋め込む）
+        const cssContent = `
+      .liquid-glass-menu-root .calendar-today,
+      .liquid-glass-menu-root .calendar-today:hover,
+      .liquid-glass-menu-root .calendar-today:active,
+      .liquid-glass-menu-root .calendar-today:checked,
+      .liquid-glass-menu-root .calendar-today:focus {
+        background-color: ${colorStr} !important;
+        color: white !important;
+      }
+    `;
+        try {
+            // 4. ユーザーのキャッシュディレクトリに一時CSSファイルとして保存
+            const cacheDir = GLib.get_user_cache_dir();
+            const filePath = GLib.build_filenamev([cacheDir, 'liquid-glass-accent.css']);
+            // 文字列をファイルに書き込み
+            GLib.file_set_contents(filePath, cssContent);
+            const themeContext = St.ThemeContext.get_for_stage(global.stage);
+            const theme = themeContext.get_theme();
+            // 5. 古い動くスタイルシートがあれば先にアンロード（多重適用防止）
+            if (this._dynamicCssFile) {
+                theme.unload_stylesheet(this._dynamicCssFile);
+            }
+            // 6. 新しいスタイルシートをテーマに直接ロード
+            this._dynamicCssFile = Gio.File.new_for_path(filePath);
+            theme.load_stylesheet(this._dynamicCssFile);
+            console.log(`[Liquid Glass] 動的CSSの注入に成功しました。適用色: ${colorStr}`);
+        }
+        catch (e) {
+            console.log(`[Liquid Glass] 動的CSSの適用に失敗しました: ${e}`);
         }
     }
     // Utility: Convert HEX color string to normalized RGB array
@@ -140,6 +227,24 @@ export class UIManager {
                 this._applyEffect();
             else if (!enabled && this._isEffectActive)
                 this._removeEffect();
+        });
+        connectSetting('enable-menu-animation', () => {
+            this._enableAnimation = this._settings.get_boolean('enable-menu-animation');
+        });
+        connectSetting('menu-spring-stiffness', () => {
+            this._springStiffness = this._settings.get_double('menu-spring-stiffness');
+            if (this._springScale)
+                this._springScale.updateParams(this._springStiffness, this._springDamping, this._springMass);
+        });
+        connectSetting('menu-spring-damping', () => {
+            this._springDamping = this._settings.get_double('menu-spring-damping');
+            if (this._springScale)
+                this._springScale.updateParams(this._springStiffness, this._springDamping, this._springMass);
+        });
+        connectSetting('menu-spring-mass', () => {
+            this._springMass = this._settings.get_double('menu-spring-mass');
+            if (this._springScale)
+                this._springScale.updateParams(this._springStiffness, this._springDamping, this._springMass);
         });
         connectSetting('menu-tint-color', () => {
             if (this.effect) {
@@ -390,8 +495,18 @@ export class UIManager {
     }
     // Calculates and synchronizes the position/size of the glass background every frame
     _syncGeometry() {
-        if (!this.bgActor || !this.targetActor || !this.targetActor.mapped)
+        if (!this.bgActor || !this.targetActor || !this.targetActor.mapped) {
+            if (this.bgActor && this.bgActor.visible) {
+                this.bgActor.hide();
+            }
             return;
+        }
+        if (!this.bgActor.visible) {
+            this.bgActor.show();
+        }
+        if (!this._enableAnimation) {
+            this.bgActor.opacity = this.targetActor.opacity;
+        }
         let [inW, inH] = this.animActor.get_size();
         let [outW, outH] = this.targetActor.get_size();
         let [scaleX, scaleY] = this.animActor.get_scale();
@@ -438,7 +553,7 @@ export class UIManager {
                 let buttonActor = Main.panel.statusArea.dateMenu.actor;
                 let [btnX, btnY] = buttonActor.get_transformed_position();
                 let [btnW, btnH] = buttonActor.get_size();
-
+         
                 if (!Number.isNaN(btnX) && !Number.isNaN(btnY)) {
                     // Assume the menu opens centered directly below the clock button
                     animAbsX = btnX + (btnW / 2) - (w / 2) + this._menuXoffset; // Apply horizontal offset
@@ -674,9 +789,12 @@ export class UIManager {
                 }
                 actor._currentTargetColor = undefined;
                 actor._currentInsensitiveState = undefined;
-                actor.remove_style_class_name('adaptive-text-transition');
-                actor.remove_style_class_name('adaptive-color-light');
-                actor.remove_style_class_name('adaptive-color-dark');
+                try {
+                    actor.remove_style_class_name('adaptive-text-transition');
+                    actor.remove_style_class_name('adaptive-color-light');
+                    actor.remove_style_class_name('adaptive-color-dark');
+                }
+                catch (e) { }
                 // 元のスタイル(またはnull)をセット
                 actor.set_style(originalStyle || null);
             }
@@ -692,7 +810,10 @@ export class UIManager {
                 }
                 actor._currentTargetColor = undefined;
                 actor._currentInsensitiveState = undefined;
-                actor.set_style(null);
+                try {
+                    actor.set_style(null);
+                }
+                catch (e) { }
             }
         }
     }
@@ -778,7 +899,10 @@ export class UIManager {
         if (skipAnimations) {
             let alphaStr = targetAlpha.toFixed(3);
             let targetRgba = `rgba(${targetRgb.r}, ${targetRgb.g}, ${targetRgb.b}, ${alphaStr})`;
-            actor.set_style(`color: ${targetRgba}; -st-icon-foreground-color: ${targetRgba};`);
+            try {
+                actor.set_style(`color: ${targetRgba}; -st-icon-foreground-color: ${targetRgba};`);
+            }
+            catch (e) { }
             return;
         }
         let startTime = GLib.get_monotonic_time();
@@ -802,7 +926,10 @@ export class UIManager {
             let alphaStr = a.toFixed(3); // CSS用に小数点第3位まで
             let currentRgba = `rgba(${r}, ${g}, ${b}, ${alphaStr})`;
             // Override text color and icon foreground color directly using inline CSS
-            actor.set_style(`color: ${currentRgba}; -st-icon-foreground-color: ${currentRgba};`);
+            try {
+                actor.set_style(`color: ${currentRgba}; -st-icon-foreground-color: ${currentRgba};`);
+            }
+            catch (e) { }
             // Check for animation completion
             if (progress >= 1.0) {
                 actor._colorTweenId = undefined;
@@ -813,11 +940,34 @@ export class UIManager {
     }
     // Handles the custom bounce/spring physics when the menu opens or closes
     _startAnimation(targetValue) {
+        let isClosing = (targetValue === 0);
+        if (this._tickId !== 0) {
+            GLib.source_remove(this._tickId);
+            this._tickId = 0;
+        }
+        // If animation is disabled, just hide the menu and exit
+        if (!this._enableAnimation) {
+            if (this.bgActor) {
+                this.bgActor.remove_all_transitions();
+                this.bgActor.opacity = 255;
+                this.bgActor.set_scale(1.0, 1.0);
+                // 独自アニメーション（スケール変更など）の残骸をリセットし、GNOMEデフォルトの動作に任せる
+                if (this.animActor) {
+                    // this.animActor.remove_all_transitions();
+                    this.animActor.set_scale(1.0, 1.0);
+                    this.animActor.opacity = 255;
+                }
+                // アニメーション中の透明度や位置の同期は _syncGeometry が行います
+            }
+            return;
+        }
         // Clear any built-in GNOME transitions that might interfere with our logic
         if (this.animActor)
             this.animActor.remove_all_transitions();
         if (this.bgActor)
             this.bgActor.remove_all_transitions();
+        // Update the spring physics parameters
+        // this._springScale.updateParams(this._settings.get_double("menu-spring-stiffness"), this._settings.get_double("menu-spring-damping"), this._settings.get_double("menu-spring-mass"));
         this._springScale.target = targetValue;
         this._springPos.target = targetValue;
         // If an animation loop isn't already running, start a new one
@@ -832,7 +982,7 @@ export class UIManager {
                 let currentTime = GLib.get_monotonic_time();
                 let elapsedMs = (currentTime - lastTime) / 1000;
                 lastTime = currentTime;
-                let isClosing = (this._springScale.target === 0);
+                // let isClosing = (this._springScale.target === 0);
                 // Cap delta time to prevent physics explosions during severe lag spikes
                 let dt = elapsedMs / 1000;
                 if (dt > 0.033)
@@ -934,6 +1084,11 @@ export class UIManager {
                 global.compositor.get_laters().remove(this._frameSyncId);
             this._frameSyncId = 0;
         }
+        if (this._interfaceSettings && this._accentColorSignalId) {
+            this._interfaceSettings.disconnect(this._accentColorSignalId);
+            this._accentColorSignalId = 0;
+            this._interfaceSettings = null;
+        }
         // Remove transparent CSS overrides
         this.targetActor.remove_style_class_name('liquid-glass-transparent');
         if (this.animActor) {
@@ -943,6 +1098,12 @@ export class UIManager {
             this.animActor.translation_y = 0;
             this.animActor.set_scale(1.0, 1.0);
             this.animActor.opacity = 255;
+        }
+        if (this._dynamicCssFile) {
+            const themeContext = St.ThemeContext.get_for_stage(global.stage);
+            const theme = themeContext.get_theme();
+            theme.unload_stylesheet(this._dynamicCssFile);
+            this._dynamicCssFile = null;
         }
         /*
         const messageList = Main.panel.statusArea.dateMenu._messageList;
@@ -1000,6 +1161,11 @@ class Spring {
         this.value = 0; // Current position/scale
         this.velocity = 0; // Current speed
         this.target = 0; // Destination value
+    }
+    updateParams(stiffness, damping, mass) {
+        this.stiffness = stiffness; // How rigid the spring is (higher = faster, more snappy)
+        this.damping = damping; // Friction (higher = less bounce, settles quicker)
+        this.mass = mass; // Weight of the object
     }
     update(elapsedMs) {
         // Cap max delta time to prevent the spring from violently exploding during heavy CPU load

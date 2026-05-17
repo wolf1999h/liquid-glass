@@ -46,8 +46,13 @@ export class QuickSettingsManager {
     _glassExpand;
     _menuXoffset;
     _menuYoffset;
+    // Spring physics parameters
     _springScale;
     _springPos;
+    _springStiffness;
+    _springDamping;
+    _springMass;
+    _enableAnimation;
     _tickId;
     _contrastSampler;
     _adaptiveTimerId;
@@ -92,6 +97,10 @@ export class QuickSettingsManager {
         // Spring(stiffness, damping, mass)
         this._springScale = new Spring(120, 8, 1.0);
         this._springPos = new Spring(300, 12, 1.0);
+        this._springStiffness = 120;
+        this._springDamping = 8;
+        this._springMass = 1.0;
+        this._enableAnimation = true;
         this._tickId = 0;
         this._contrastSampler = new StageContrastSampler();
         this._adaptiveTimerId = 0;
@@ -112,6 +121,12 @@ export class QuickSettingsManager {
         if (!this._settings)
             return;
         this._bindSettings();
+        this._enableAnimation = this._settings.get_boolean('enable-quick-settings-animation');
+        this._springStiffness = this._settings.get_double('quick-settings-spring-stiffness');
+        this._springDamping = this._settings.get_double('quick-settings-spring-damping');
+        this._springMass = this._settings.get_double('quick-settings-spring-mass');
+        this._springScale.updateParams(this._springStiffness, this._springDamping, this._springMass);
+        this._springPos.updateParams(this._springStiffness, this._springDamping, this._springMass);
         if (this._settings.get_boolean('enable-quick-settings-glass')) {
             this._applyEffect();
         }
@@ -150,6 +165,24 @@ export class QuickSettingsManager {
                 this._applyEffect();
             else if (!enabled && this._isEffectActive)
                 this._removeEffect();
+        });
+        connectSetting('enable-quick-settings-animaion', () => {
+            this._enableAnimation = this._settings.get_boolean('enable-quick-settings-animaion');
+        });
+        connectSetting('quick-settings-spring-stiffness', () => {
+            this._springStiffness = this._settings.get_double('quick-settings-spring-stiffness');
+            if (this._springScale)
+                this._springScale.updateParams(this._springStiffness, this._springDamping, this._springMass);
+        });
+        connectSetting('quick-settings-spring-damping', () => {
+            this._springDamping = this._settings.get_double('quick-settings-spring-damping');
+            if (this._springScale)
+                this._springScale.updateParams(this._springStiffness, this._springDamping, this._springMass);
+        });
+        connectSetting('quick-settings-spring-mass', () => {
+            this._springMass = this._settings.get_double('quick-settings-spring-mass');
+            if (this._springScale)
+                this._springScale.updateParams(this._springStiffness, this._springDamping, this._springMass);
         });
         connectSetting('quick-settings-tint-color', () => {
             if (this.effect) {
@@ -373,6 +406,15 @@ export class QuickSettingsManager {
         // Handle the first open as a plain GNOME quick settings open; apply custom behavior only afterwards.
         this._signals.push(this.menu.connect('open-state-changed', (menu, isOpen) => {
             if (isOpen) {
+                if (this.bgActor) {
+                    let currentMenuParent = this.targetActor.get_parent();
+                    if (currentMenuParent && this.bgActor.get_parent() !== currentMenuParent) {
+                        let oldParent = this.bgActor.get_parent();
+                        if (oldParent)
+                            oldParent.remove_child(this.bgActor);
+                        currentMenuParent.insert_child_below(this.bgActor, this.targetActor);
+                    }
+                }
                 if (!this._hasAutoRefreshed) {
                     this._hasAutoRefreshed = true;
                     return;
@@ -476,7 +518,7 @@ export class QuickSettingsManager {
                 let buttonActor = Main.panel.statusArea.quickSettings.actor;
                 let [btnX, btnY] = buttonActor.get_transformed_position();
                 let [btnW, btnH] = buttonActor.get_size();
-    
+         
                 if (!Number.isNaN(btnX) && !Number.isNaN(btnY)) {
                     // Assume the menu opens centered directly below the clock button
                     animAbsX = btnX + (btnW / 2) - (w / 2);
@@ -908,6 +950,7 @@ export class QuickSettingsManager {
         // Temporarily clear inline style to fetch the base theme background
         let origStyle = this._styledButtons.get(button) || '';
         button.set_style(origStyle || null);
+        button.ensure_style();
         let themeNode = button.get_theme_node();
         if (themeNode) {
             let bgColor = themeNode.get_background_color();
@@ -1048,6 +1091,25 @@ export class QuickSettingsManager {
     }
     // Handles the custom bounce/spring physics when the menu opens or closes
     _startAnimation(targetValue) {
+        let isClosing = (targetValue === 0);
+        /*
+        if (this._tickId !== 0) {
+          GLib.source_remove(this._tickId);
+          this._tickId = 0;
+        }
+        */
+        // If animation is disabled, just hide the menu and exit
+        if (!this._enableAnimation) {
+            if (this.bgActor) {
+                this.bgActor.remove_all_transitions();
+                // 独自アニメーション（スケール変更など）の残骸をリセットし、GNOMEデフォルトの動作に任せる
+                if (this.animActor) {
+                    this.animActor.remove_all_transitions();
+                    this.animActor.set_scale(1.0, 1.0);
+                    this.animActor.opacity = 255;
+                }
+            }
+        }
         // Clear any built-in GNOME transitions that might interfere with our logic
         if (this.animActor)
             this.animActor.remove_all_transitions();
@@ -1067,7 +1129,7 @@ export class QuickSettingsManager {
                 let currentTime = GLib.get_monotonic_time();
                 let elapsedMs = (currentTime - lastTime) / 1000;
                 lastTime = currentTime;
-                let isClosing = (this._springScale.target === 0);
+                // let isClosing = (this._springScale.target === 0);
                 // Cap delta time to prevent physics explosions during severe lag spikes
                 let dt = elapsedMs / 1000;
                 if (dt > 0.033)
@@ -1238,6 +1300,11 @@ class Spring {
         this.value = 0; // Current position/scale
         this.velocity = 0; // Current speed
         this.target = 0; // Destination value
+    }
+    updateParams(stiffness, damping, mass) {
+        this.stiffness = stiffness; // How rigid the spring is (higher = faster, more snappy)
+        this.damping = damping; // Friction (higher = less bounce, settles quicker)
+        this.mass = mass; // Weight of the object
     }
     update(elapsedMs) {
         // Cap max delta time to prevent the spring from violently exploding during heavy CPU load

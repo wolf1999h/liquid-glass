@@ -698,7 +698,6 @@ export class DashManager {
         this.targetActor.set_style(this._originalStyle);
         this._originalStyle = undefined;
       }
-
       let children = this.targetActor.get_children() as St.Widget[];
       for (let i = 0; i < children.length; i++) {
         if (children[i].has_style_class_name('dash-background')) {
