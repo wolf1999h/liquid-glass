@@ -1182,12 +1182,17 @@ export class QuickSettingsManager {
       if (!this._styledButtons.has(button)) {
         if (button instanceof St.Widget) {
           let origStyle = typeof button.get_style === 'function' ? button.get_style() : null;
-          if (origStyle) this._styledButtons.set(button, origStyle);
+          this._styledButtons.set(button, origStyle || '');
         }
-        // PERFORMANCE FIX: Only update the specific button that triggered the event
+
         const updateHandler = () => {
-          if (this.menu?.isOpen) this._updateSingleButtonAlpha(button as CustomBannerActor, targetAlpha);
+          if (!this.menu?.isOpen) return;
+          GLib.idle_add(GLib.PRIORITY_DEFAULT, () => {
+            this._updateSingleButtonAlpha(button as CustomBannerActor, targetAlpha);
+            return GLib.SOURCE_REMOVE;
+          });
         };
+
 
         let signalIds: number[] = [];
 
@@ -1204,9 +1209,8 @@ export class QuickSettingsManager {
 
         this._buttonSignalIds.set(button, signalIds);
       }
-
       // Apply style safely
-      this._updateSingleButtonAlpha(button as CustomBannerActor, targetAlpha);
+      this._updateSingleButtonAlpha(button as unknown as CustomBannerActor, targetAlpha);
     }
   }
 

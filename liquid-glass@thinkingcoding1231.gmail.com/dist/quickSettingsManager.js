@@ -1015,13 +1015,15 @@ export class QuickSettingsManager {
             if (!this._styledButtons.has(button)) {
                 if (button instanceof St.Widget) {
                     let origStyle = typeof button.get_style === 'function' ? button.get_style() : null;
-                    if (origStyle)
-                        this._styledButtons.set(button, origStyle);
+                    this._styledButtons.set(button, origStyle || '');
                 }
-                // PERFORMANCE FIX: Only update the specific button that triggered the event
                 const updateHandler = () => {
-                    if (this.menu?.isOpen)
+                    if (!this.menu?.isOpen)
+                        return;
+                    GLib.idle_add(GLib.PRIORITY_DEFAULT, () => {
                         this._updateSingleButtonAlpha(button, targetAlpha);
+                        return GLib.SOURCE_REMOVE;
+                    });
                 };
                 let signalIds = [];
                 signalIds.push(button.connect('notify::hover', updateHandler));
