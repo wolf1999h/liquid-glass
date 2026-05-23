@@ -65,12 +65,23 @@ float profileHeight(float t, float zScale) {
 float getHeight(vec2 p, vec2 b, float r, float zScale) {
     float d = sdRoundRect(p, b, r);
 
-    // Flat surface outside the boundary
-    if (d > 0.0)
+    // [FIX 1] Soft boundary fade instead of a hard step at d=0.
+    // A hard "if (d > 0) return 0" causes a discontinuous jump in the height
+    // field. When heightGradient() straddles this boundary via finite
+    // differences, it produces a large spurious gradient spike that manifests
+    // as jaggy displacement especially against high-frequency backgrounds.
+    // Allowing a smooth fade over ±edge_smoothing pixels eliminates the spike.
+    float smoothZone = max(edge_smoothing, 1.0);
+    if (d > smoothZone)
         return 0.0;
 
     float t = normalizedDepth(d, b, r);
-    return profileHeight(t, zScale);
+    float h = profileHeight(t, zScale);
+
+    // Taper height continuously to zero as d approaches the boundary from inside,
+    // and continue fading through the thin outer fringe (0 < d < smoothZone).
+    float fade = smoothstep(smoothZone, -smoothZone, d);
+    return h * fade;
 }
 
 // Dynamically adjusts the sampling step size for normal estimation based on resolution.
@@ -177,7 +188,7 @@ void main() {
     vec2 disp = getDisplacement(d, normal, resolution);
 
     // Dampen the refraction near the exact boundaries to eliminate jagged artifacts.
-    float edgeDampen = smoothstep(0.0, 3.0, -d);
+    float edgeDampen = smoothstep(0.0, edgeFeather * 3.0, -d);
     disp *= edgeDampen;
 
     vec2 refractedUv = stabilizedUV(uv + disp, uv);
@@ -194,7 +205,8 @@ void main() {
     // Step 1: RGSS (Rotated Grid Super-Sampling) Pattern Implementation
     // Instead of sampling in a simple square, sampling in a slanted diamond pattern
     // provides significantly better anti-aliasing for both horizontal and vertical edges.
-    float aa_spread = 1.0;
+    float edgeProximity = 1.0 - smoothstep(0.0, edgeFeather * 4.0, -d);
+    float aa_spread = mix(0.75, 2.5, edgeProximity);
     vec2 texel = vec2(aa_spread) / resolution;
 
     vec2 off1 = vec2( 0.375, -0.125) * texel;
