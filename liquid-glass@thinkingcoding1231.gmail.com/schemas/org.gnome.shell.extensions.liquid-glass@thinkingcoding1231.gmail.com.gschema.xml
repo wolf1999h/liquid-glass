@@ -326,5 +326,11 @@
       <description>The directional angle of the virtual light source illuminating the glass.</description>
     </key>
 
+    <key name="output-logs" type="b">
+      <default>false</default>
+      <summary>Output logs</summary>
+      <description>Output logs to the terminal.</description>
+    </key>
+
   </schema>
 </schemalist>

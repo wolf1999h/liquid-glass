@@ -170,6 +170,11 @@ export default class LiquidGlassPreferences extends ExtensionPreferences {
     this._addSpinRow(lightGroup, settings, 'glass-rim-light-color-intensity', 'Rim Light Color Intensity', 'Multiplier for rim color', 0.0, 5.0, 0.1);
     this._addSpinRow(lightGroup, settings, 'glass-sheen-intensity', 'Sheen Intensity', 'Background sheen across surface', 0.0, 2.0, 0.01);
     this._addSpinRow(lightGroup, settings, 'glass-light-angle-deg', 'Light Angle (Deg)', 'Directional angle of light source', 0.0, 360.0, 1.0);
+
+    const debugGroup = new Adw.PreferencesGroup({ title: 'Debug' });
+    shaderPage.add(debugGroup);
+
+    this._addSwitchRow(debugGroup, settings, 'output-logs', 'Output Logs', 'Output logs to the terminal');
   }
 
   // --- 便利メソッド群 ---
