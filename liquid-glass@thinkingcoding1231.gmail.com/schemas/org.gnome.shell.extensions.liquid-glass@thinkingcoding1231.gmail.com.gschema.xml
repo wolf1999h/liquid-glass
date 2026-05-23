@@ -56,6 +56,10 @@
       <default>1.0</default>
       <summary>Spring mass</summary>
     </key>
+    <key name="menu-animation-interval-ms" type="i">
+      <default>16</default>
+      <summary>Animation interval (ms)</summary>
+    </key>
     <key name="menu-x-offset" type="i">
       <default>0</default>
       <summary>X offset</summary>
@@ -156,6 +160,10 @@
     <key name="quick-settings-spring-mass" type="d">
       <default>1.0</default>
       <summary>Spring mass</summary>
+    </key>
+    <key name="quick-settings-animation-interval-ms" type="i">
+      <default>16</default>
+      <summary>Animation interval (ms)</summary>
     </key>
     <key name="quick-settings-enable-adaptive-text-color" type="b">
       <default>false</default>

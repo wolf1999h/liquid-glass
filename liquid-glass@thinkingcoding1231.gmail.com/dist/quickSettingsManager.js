@@ -73,6 +73,7 @@ export class QuickSettingsManager {
     _lastBgX;
     _lastBgY;
     _cornerRadius = 0;
+    _animationInterval = 16;
     constructor(extensionPath, settings) {
         this.extensionPath = extensionPath;
         this._settings = settings;
@@ -187,6 +188,9 @@ export class QuickSettingsManager {
             if (this._springScale)
                 this._springScale.updateParams(this._springStiffness, this._springDamping, this._springMass);
         });
+        connectSetting('quick-settings-animation-interval-ms', () => {
+            this._animationInterval = this._settings.get_int('quick-settings-animation-interval-ms');
+        });
         connectSetting('quick-settings-tint-color', () => {
             if (this.effect) {
                 let colorArray = this._hexToColorArray(this._settings.get_string('quick-settings-tint-color'));
@@ -260,6 +264,7 @@ export class QuickSettingsManager {
         this._menuYoffset = this._settings.get_int('quick-settings-y-offset');
         this._menuXoffset = this._settings.get_int('quick-settings-x-offset');
         this._glassExpand = this._settings.get_int('quick-settings-glass-expand');
+        this._animationInterval = this._settings.get_int('quick-settings-animation-interval-ms');
         this._adaptiveConfig = {
             ...AdaptiveContrastConfig,
             enabled: this._settings.get_boolean('quick-settings-enable-adaptive-text-color'),
@@ -1195,7 +1200,7 @@ export class QuickSettingsManager {
         if (this._tickId === 0) {
             let lastTime = GLib.get_monotonic_time();
             // Run at ~60fps (every 16ms)
-            this._tickId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 16, () => {
+            this._tickId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, this._animationInterval, () => {
                 if (!this.bgActor || !this.targetActor) {
                     this._tickId = 0;
                     return GLib.SOURCE_REMOVE;

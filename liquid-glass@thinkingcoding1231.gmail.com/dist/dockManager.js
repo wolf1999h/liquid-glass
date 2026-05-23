@@ -332,16 +332,6 @@ export class DashManager {
         }
         if (this._outputLogs)
             log(`[Raw] ${absX}, ${absY}, ${baseW}, ${baseH}`);
-        /*
-        if (this._lastBaseW !== undefined && this._lastBaseH !== undefined) {
-          if (Math.abs(Math.abs(baseW - this._lastBaseW) - this._marginValue) > 1 || Math.abs(Math.abs(baseH - this._lastBaseH) - this._marginValue) > 1) {
-            baseW = this._lastBaseW;
-            baseH = this._lastBaseH;
-          }
-        }
-        this._lastBaseW = baseW;
-        this._lastBaseH = baseH;
-        */
         let monitorIndex = Main.layoutManager.findIndexForActor(this.targetActor);
         if (monitorIndex < 0) {
             monitorIndex = Main.layoutManager.primaryIndex;

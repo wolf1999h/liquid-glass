@@ -94,6 +94,8 @@ export class QuickSettingsManager {
 
   private _cornerRadius: number = 0;
 
+  private _animationInterval: number = 16;
+
   constructor(extensionPath: string, settings: Gio.Settings) {
     this.extensionPath = extensionPath;
     this._settings = settings;
@@ -228,6 +230,10 @@ export class QuickSettingsManager {
       if (this._springScale) this._springScale.updateParams(this._springStiffness, this._springDamping, this._springMass);
     });
 
+    connectSetting('quick-settings-animation-interval-ms', () => {
+      this._animationInterval = this._settings.get_int('quick-settings-animation-interval-ms');
+    });
+
     connectSetting('quick-settings-tint-color', () => {
       if (this.effect) {
         let colorArray = this._hexToColorArray(this._settings.get_string('quick-settings-tint-color'));
@@ -313,6 +319,7 @@ export class QuickSettingsManager {
     this._menuXoffset = this._settings.get_int('quick-settings-x-offset');
 
     this._glassExpand = this._settings.get_int('quick-settings-glass-expand');
+    this._animationInterval = this._settings.get_int('quick-settings-animation-interval-ms');
 
     this._adaptiveConfig = {
       ...AdaptiveContrastConfig,
@@ -1391,7 +1398,7 @@ export class QuickSettingsManager {
       let lastTime = GLib.get_monotonic_time();
 
       // Run at ~60fps (every 16ms)
-      this._tickId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 16, () => {
+      this._tickId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, this._animationInterval, () => {
         if (!this.bgActor || !this.targetActor) {
           this._tickId = 0;
           return GLib.SOURCE_REMOVE;

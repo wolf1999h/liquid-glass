@@ -74,6 +74,7 @@ export class UIManager {
     _accentColorSignalId = 0;
     _dynamicCssFile = null;
     _cornerRadius = 0;
+    _animationInterval = 16;
     constructor(extensionPath, settings) {
         this.extensionPath = extensionPath;
         this._settings = settings;
@@ -259,6 +260,9 @@ export class UIManager {
             if (this._springScale)
                 this._springScale.updateParams(this._springStiffness, this._springDamping, this._springMass);
         });
+        connectSetting('menu-animation-interval-ms', () => {
+            this._animationInterval = this._settings.get_int('menu-animation-interval-ms');
+        });
         connectSetting('menu-tint-color', () => {
             if (this.effect) {
                 let colorArray = this._hexToColorArray(this._settings.get_string('menu-tint-color'));
@@ -321,6 +325,7 @@ export class UIManager {
         this.animActor.translation_x = this._menuXoffset;
         this.animActor.translation_y = this._menuYoffset;
         this._glassExpand = this._settings.get_int('menu-glass-expand');
+        this._animationInterval = this._settings.get_int('menu-animation-interval-ms');
         this._adaptiveConfig = {
             ...AdaptiveContrastConfig,
             enabled: this._settings.get_boolean('menu-enable-adaptive-text-color'),
@@ -1064,7 +1069,7 @@ export class UIManager {
         if (this._tickId === 0) {
             let lastTime = GLib.get_monotonic_time();
             // Run at ~60fps (every 16ms)
-            this._tickId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 16, () => {
+            this._tickId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, this._animationInterval, () => {
                 if (!this.bgActor || !this.targetActor) {
                     this._tickId = 0;
                     return GLib.SOURCE_REMOVE;

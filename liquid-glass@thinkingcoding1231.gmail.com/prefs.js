@@ -54,10 +54,12 @@ export default class LiquidGlassPreferences extends ExtensionPreferences {
     const menuStiffnessRow = this._addSpinRow(menuGroup, settings, 'menu-spring-stiffness', 'Spring Stiffness', 'Spring stiffness', 0.0, 1000.0, 0.1);
     const menuDampingRow = this._addSpinRow(menuGroup, settings, 'menu-spring-damping', 'Spring Damping', 'Spring damping', 0.0, 1000.0, 0.1);
     const menuMassRow = this._addSpinRow(menuGroup, settings, 'menu-spring-mass', 'Spring Mass', 'Spring mass', 0.0, 1.0, 0.1);
+    const menuIntervalRow = this._addSpinRow(menuGroup, settings, 'menu-animation-interval-ms', 'Animation Interval (ms)', 'Animation interval', 0, 1000, 1);
 
     settings.bind('enable-menu-animation', menuStiffnessRow, 'sensitive', Gio.SettingsBindFlags.GET);
     settings.bind('enable-menu-animation', menuDampingRow, 'sensitive', Gio.SettingsBindFlags.GET);
     settings.bind('enable-menu-animation', menuMassRow, 'sensitive', Gio.SettingsBindFlags.GET);
+    settings.bind('enable-menu-animation', menuIntervalRow, 'sensitive', Gio.SettingsBindFlags.GET);
 
     this._addSpinRow(menuGroup, settings, 'menu-glass-expand', 'Glass Expand', 'Extra area for the effect', 0, 50, 1);
     this._addSpinRow(menuGroup, settings, 'menu-x-offset', 'X Offset', 'Horizontal offset adjustment', -200, 200, 1);
@@ -106,10 +108,12 @@ export default class LiquidGlassPreferences extends ExtensionPreferences {
     const quickSettingsStiffnessRow = this._addSpinRow(qsGroup, settings, 'quick-settings-spring-stiffness', 'Spring Stiffness', 'Spring stiffness', 0.0, 1000.0, 0.1);
     const quickSettingsDampingRow = this._addSpinRow(qsGroup, settings, 'quick-settings-spring-damping', 'Spring Damping', 'Spring damping', 0.0, 1000.0, 0.1);
     const quickSettingsMassRow = this._addSpinRow(qsGroup, settings, 'quick-settings-spring-mass', 'Spring Mass', 'Spring mass', 0.0, 1.0, 0.1);
+    const quickSettingsIntervalRow = this._addSpinRow(qsGroup, settings, 'quick-settings-animation-interval-ms', 'Animation Interval (ms)', 'Animation interval', 0, 1000, 1);
 
     settings.bind('enable-quick-settings-animation', quickSettingsStiffnessRow, 'sensitive', Gio.SettingsBindFlags.GET);
     settings.bind('enable-quick-settings-animation', quickSettingsDampingRow, 'sensitive', Gio.SettingsBindFlags.GET);
     settings.bind('enable-quick-settings-animation', quickSettingsMassRow, 'sensitive', Gio.SettingsBindFlags.GET);
+    settings.bind('enable-quick-settings-animation', quickSettingsIntervalRow, 'sensitive', Gio.SettingsBindFlags.GET);
 
     this._addSwitchRow(qsGroup, settings, 'quick-settings-enable-adaptive-text-color', 'Adaptive Text Color', 'Adjust text contrast automatically');
     this._addSpinRow(qsGroup, settings, 'quick-settings-sample-interval-ms', 'Sample Interval (ms)', 'Contrast update frequency', 100, 2000, 50);
