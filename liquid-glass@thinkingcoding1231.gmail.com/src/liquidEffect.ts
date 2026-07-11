@@ -127,17 +127,25 @@ export const LiquidEffect = GObject.registerClass({
 
   cleanup() {
     if (this._settings && this._settingsIds) {
-      this._settingsIds.forEach(id => this._settings?.disconnect(id));
-      this._settingsIds = [];
+        for (const id of this._settingsIds) {
+            try { this._settings.disconnect(id); }
+            catch (e) { console.warn(`[Liquid Glass] Signal ${id} disconnect error: ${e}`); }
+        }
+        this._settingsIds = [];
     }
+    this._settings = undefined;
   }
 
   // Helper method to safely pass float values to the GLSL shader.
   _setFloat(name: string, value: number) {
-    let gval = new GObject.Value();
-    gval.init(GObject.TYPE_FLOAT);
-    gval.set_float(value);
-    this.set_uniform_value(name, gval);
+    try {
+        let gval = new GObject.Value();
+        gval.init(GObject.TYPE_FLOAT);
+        gval.set_float(value);
+        this.set_uniform_value(name, gval);
+    } catch (e) {
+        console.warn(`[Liquid Glass] Uniform ${name} set failed: ${e}`);
+    }
   }
 
   setIsDock(isDock: boolean) {

@@ -12,6 +12,13 @@ export default class LiquidGlassPreferences extends ExtensionPreferences {
     const resourceFile = this.dir.get_child('resources.gresource');
     const resource = Gio.Resource.load(resourceFile.get_path());
     resource._register();
+    window.connect('close-request', () => {
+        if (resource) {
+            try { resource._unregister(); } catch (e) {}
+            resource = null;
+        }
+        return false;
+    });
     const iconTheme = Gtk.IconTheme.get_for_display(Gdk.Display.get_default());
     iconTheme.add_resource_path('/com/example/my-app/icons');
     // --- Dock タブ ---
@@ -227,7 +234,9 @@ export default class LiquidGlassPreferences extends ExtensionPreferences {
 
     // 保存されたHEX文字列をRGBAに変換してセット
     const rgba = new Gdk.RGBA();
-    rgba.parse(settings.get_string(key));
+    if (!rgba.parse(settings.get_string(key))) {
+        rgba.parse('#888888');
+    }
     colorButton.rgba = rgba;
 
     // 色が変わったらHEXに変換して保存

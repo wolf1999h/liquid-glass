@@ -138,6 +138,19 @@ export class DashManager {
             this._outputLogs = this._settings.get_boolean('output-logs');
         });
     }
+    _disconnectSettingsSignals() {
+        if (!this._settings || !this._settingsSignals)
+            return;
+        for (const id of this._settingsSignals) {
+            try {
+                this._settings.disconnect(id);
+            }
+            catch (e) {
+                console.warn(`[Liquid Glass] Signal disconnect failed: ${e}`);
+            }
+        }
+        this._settingsSignals = [];
+    }
     // マージンの再計算と適用（動的反映のために独立した関数化）
     _applyMargin() {
         if (!this.targetActor)
@@ -247,6 +260,7 @@ export class DashManager {
                 this.windowClonesContainer.destroy();
                 this.windowClonesContainer = null;
             }
+            this._windowClones.clear();
             this.bgClone = new UnpickableClone({ source: Main.layoutManager._backgroundGroup });
             this.clipBox?.add_child(this.bgClone);
             this.windowClonesContainer = new Clutter.Actor();
@@ -769,6 +783,10 @@ export class DashManager {
         if (!this._isEffectActive)
             return;
         this._isEffectActive = false;
+        if (this._frameSyncId !== 0 && global.compositor?.get_laters) {
+            global.compositor.get_laters().remove(this._frameSyncId);
+            this._frameSyncId = 0;
+        }
         this._currentMarginStyle = undefined;
         // Safely try to remove styles/signals. If targetActor is already destroyed, 
         // this will fail safely without breaking the rest of the cleanup.
@@ -831,6 +849,7 @@ export class DashManager {
         this.bgClone = null;
         this.windowClonesContainer = null;
         this._windowClones.clear();
+        this._windowClones.clear();
         if (this.overviewCloneContainer) {
             // this.overviewCloneContainer.destroy();
             this.overviewCloneContainer = null;
@@ -841,6 +860,7 @@ export class DashManager {
     }
     // 拡張機能全体が無効化される時の最終クリーンアップ
     cleanup() {
+        this._disconnectSettingsSignals();
         // エフェクトを解除
         this._removeEffect();
         // メモリリークを防ぐため、GSettingsのリスナーもすべて解除する

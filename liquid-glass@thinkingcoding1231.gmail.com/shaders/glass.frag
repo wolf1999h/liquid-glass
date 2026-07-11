@@ -142,7 +142,7 @@ vec2 getDisplacement(float d, vec3 normal, vec2 resolution) {
 vec2 stabilizedUV(vec2 candidate, vec2 fallback) {
     vec2 clamped = clamp(candidate, vec2(0.001), vec2(0.999));
     float edgeDist = min(min(candidate.x, candidate.y), min(1.0 - candidate.x, 1.0 - candidate.y));
-    float keep = smoothstep(-0.04, 0.03, edgeDist);
+    float keep = smoothstep(0.03, 0.04, edgeDist);
     return mix(fallback, clamped, keep);
 }
 

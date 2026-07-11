@@ -86,7 +86,6 @@ export class DashManager {
 
     // this.bgClone = null;
     // this.windowClonesContainer = null;
-
     this._windowClones = new Map();
 
     this._signals = [];
@@ -166,6 +165,15 @@ export class DashManager {
     connectSetting('output-logs', () => {
       this._outputLogs = this._settings.get_boolean('output-logs');
     });
+  }
+
+  _disconnectSettingsSignals() {
+    if (!this._settings || !this._settingsSignals) return;
+    for (const id of this._settingsSignals) {
+        try { this._settings.disconnect(id); }
+        catch (e) { console.warn(`[Liquid Glass] Signal disconnect failed: ${e}`); }
+    }
+    this._settingsSignals = [];
   }
 
   // マージンの再計算と適用（動的反映のために独立した関数化）
@@ -287,6 +295,7 @@ export class DashManager {
 
       if (this.bgClone) { this.bgClone.destroy(); this.bgClone = null; }
       if (this.windowClonesContainer) { this.windowClonesContainer.destroy(); this.windowClonesContainer = null; }
+        this._windowClones.clear();
 
       this.bgClone = new UnpickableClone({ source: Main.layoutManager._backgroundGroup });
       this.clipBox?.add_child(this.bgClone);
@@ -834,6 +843,11 @@ export class DashManager {
     if (!this._isEffectActive) return;
     this._isEffectActive = false;
 
+    if (this._frameSyncId !== 0 && global.compositor?.get_laters) {
+        global.compositor.get_laters().remove(this._frameSyncId);
+        this._frameSyncId = 0;
+    }
+
     this._currentMarginStyle = undefined;
 
     // Safely try to remove styles/signals. If targetActor is already destroyed, 
@@ -902,6 +916,7 @@ export class DashManager {
     this.blurEffect = null;
     this.bgClone = null;
     this.windowClonesContainer = null;
+        this._windowClones.clear();
     this._windowClones.clear();
     if (this.overviewCloneContainer) {
       // this.overviewCloneContainer.destroy();
@@ -914,6 +929,8 @@ export class DashManager {
 
   // 拡張機能全体が無効化される時の最終クリーンアップ
   cleanup() {
+    this._disconnectSettingsSignals();
+
     // エフェクトを解除
     this._removeEffect();
 
